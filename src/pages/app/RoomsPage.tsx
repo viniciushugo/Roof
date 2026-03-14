@@ -19,7 +19,7 @@ import ListingModal from '../../components/ui/ListingModal'
 import PullToRefresh from '../../components/ui/PullToRefresh'
 import CatchUpView from '../../components/ui/CatchUpView'
 
-const PLATFORM_FILTERS = ['All', 'Pararius', 'Kamernet', 'Huurwoningen', 'HousingAnywhere', 'DirectWonen', 'Funda'] as const
+const PLATFORM_FILTERS = ['All', 'Pararius', 'Kamernet', 'Huurwoningen', 'HousingAnywhere', 'DirectWonen', 'Rentola', 'Kamer.nl', 'Funda'] as const
 type PlatformFilter = typeof PLATFORM_FILTERS[number]
 
 export default function RoomsPage() {
@@ -87,7 +87,7 @@ export default function RoomsPage() {
               {cityLabel} <span className="text-base">🇳🇱</span>
             </button>
             <p className="text-xs text-muted mt-0.5">
-              Listings from Pararius, Kamernet, HousingAnywhere & more
+              Listings from 8 platforms across the Netherlands
             </p>
           </div>
           <button

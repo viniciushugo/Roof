@@ -17,6 +17,10 @@ const SOURCE_BADGE_BG: Record<string, string> = {
   Kamernet: 'bg-red-50',
   Huurwoningen: 'bg-emerald-50',
   Funda: 'bg-orange-50',
+  HousingAnywhere: 'bg-purple-50',
+  DirectWonen: 'bg-cyan-50',
+  Rentola: 'bg-fuchsia-50',
+  'Kamer.nl': 'bg-amber-50',
 }
 
 export default function AlertsPage() {

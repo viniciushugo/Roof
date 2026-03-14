@@ -11,6 +11,8 @@ const SOURCE_COLORS: Record<string, string> = {
   Funda: 'bg-orange-50 text-orange-700',
   HousingAnywhere: 'bg-purple-50 text-purple-700',
   DirectWonen: 'bg-cyan-50 text-cyan-700',
+  Rentola: 'bg-fuchsia-50 text-fuchsia-700',
+  'Kamer.nl': 'bg-amber-50 text-amber-700',
 }
 
 interface Props {

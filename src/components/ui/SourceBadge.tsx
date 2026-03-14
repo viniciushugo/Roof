@@ -1,4 +1,4 @@
-type Source = 'Pararius' | 'Kamernet' | 'Huurwoningen' | 'Funda' | 'HousingAnywhere' | 'DirectWonen'
+type Source = 'Pararius' | 'Kamernet' | 'Huurwoningen' | 'Funda' | 'HousingAnywhere' | 'DirectWonen' | 'Rentola' | 'Kamer.nl'
 
 const BADGE_STYLES: Record<Source, { bg: string; text: string }> = {
   Pararius:        { bg: 'bg-blue-50',    text: 'text-blue-700'    },
@@ -7,6 +7,8 @@ const BADGE_STYLES: Record<Source, { bg: string; text: string }> = {
   Funda:           { bg: 'bg-orange-50',  text: 'text-orange-700'  },
   HousingAnywhere: { bg: 'bg-purple-50',  text: 'text-purple-700'  },
   DirectWonen:     { bg: 'bg-cyan-50',    text: 'text-cyan-700'    },
+  Rentola:         { bg: 'bg-fuchsia-50', text: 'text-fuchsia-700' },
+  'Kamer.nl':      { bg: 'bg-amber-50',   text: 'text-amber-700'   },
 }
 
 export default function SourceBadge({ source }: { source: Source }) {
