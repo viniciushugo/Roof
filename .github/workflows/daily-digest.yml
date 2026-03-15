@@ -1,0 +1,31 @@
+name: Daily Digest Email
+
+on:
+  schedule:
+    # 18:00 Amsterdam time (UTC+1 winter / UTC+2 summer) → 17:00 UTC
+    - cron: "0 17 * * *"
+  workflow_dispatch:
+
+jobs:
+  send-digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Trigger daily-digest Edge Function
+        run: |
+          response=$(curl -s -o /tmp/digest_response.json -w "%{http_code}" \
+            -X POST "${{ secrets.SUPABASE_URL }}/functions/v1/daily-digest" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_KEY }}" \
+            -H "Content-Type: application/json")
+
+          echo "HTTP status: $response"
+          echo "Response: $(cat /tmp/digest_response.json)"
+
+          if [ "$response" != "200" ]; then
+            echo "❌ Digest function returned non-200 status"
+            exit 1
+          fi
+
+          sent=$(cat /tmp/digest_response.json | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('sent', 0))")
+          echo "✅ Digest sent to $sent user(s)"

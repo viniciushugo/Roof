@@ -44,3 +44,6 @@ jobs:
       - name: Scrape Den Haag
         continue-on-error: true
         run: node scripts/scrape-all.js --city "Den Haag" --max 2000
+
+      - name: Deactivate stale listings
+        run: node scripts/deactivate-stale.js
