@@ -67,6 +67,7 @@ export default function BottomNav() {
             <button
               key={item.label}
               onClick={() => navigate(item.path)}
+              {...(item.label === 'Alerts' ? { 'data-tour': 'alerts' } : {})}
               className={`flex flex-col items-center gap-1 min-w-[60px] py-1 active:opacity-60 transition-opacity ${
                 isActive ? 'text-foreground' : 'text-neutral-400'
               }`}

@@ -1,6 +1,7 @@
 import { forwardRef, useRef, useEffect, useCallback, memo } from 'react'
 import { motion, useMotionValue, useTransform, MotionValue } from 'framer-motion'
 import { Home, Ruler } from 'lucide-react'
+import { hapticLight } from '../../lib/haptics'
 import { Listing } from '../../data/listings'
 import SourceBadge from './SourceBadge'
 
@@ -42,11 +43,11 @@ const ListingCard = memo(forwardRef<HTMLDivElement, Props>(
       return () => window.removeEventListener('resize', measure)
     }, [])
 
-    // Scale: 1.0 → 0.95 as card scrolls off the top of the feed
+    // Scale: 1.0 → 0.88 as card scrolls off the top of the feed
     const scrollScale = useTransform(effectiveScrollY, (y) => {
       if (!scrollY) return 1
       const progress = Math.max(0, Math.min(1, (y - cardTopRef.current) / CARD_HEIGHT))
-      return 1 - progress * 0.05
+      return 1 - progress * 0.12
     })
 
     return (
@@ -96,8 +97,10 @@ const ListingCard = memo(forwardRef<HTMLDivElement, Props>(
           <button
             onClick={(e) => {
               e.stopPropagation()
+              hapticLight()
               onToggleSave()
             }}
+            data-tour="save"
             className="absolute top-3 right-3 w-8 h-8 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center shadow-xs active:scale-90 transition-transform"
           >
             <svg

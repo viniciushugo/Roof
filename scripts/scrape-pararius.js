@@ -135,16 +135,28 @@ async function scrapePage(page, url) {
         const roomsText = (item.querySelector('.illustrated-features__item--number-of-rooms')?.textContent || '').trim()
         const rooms = parseInt(roomsText.replace(/[^0-9]/g, '')) || null
 
-        let imageUrl = null
-        const srcset = item.querySelector('source[srcset]')?.getAttribute('srcset')
-        if (srcset) {
-          const parts = srcset.split(',')
-          imageUrl = parts[parts.length - 1].trim().split(' ')[0] || null
-        }
-        if (!imageUrl) {
-          const src = item.querySelector('img.picture__image, img[class*="picture"]')?.getAttribute('src')
-          if (src && src.startsWith('http')) imageUrl = src
-        }
+        // Collect ALL images from the listing card (srcset sources + img tags)
+        const imageUrls = []
+        const seenUrls = new Set()
+        item.querySelectorAll('source[srcset]').forEach(source => {
+          const srcset = source.getAttribute('srcset')
+          if (srcset) {
+            const parts = srcset.split(',')
+            const url = parts[parts.length - 1].trim().split(' ')[0]
+            if (url && url.startsWith('http') && !seenUrls.has(url)) {
+              seenUrls.add(url)
+              imageUrls.push(url)
+            }
+          }
+        })
+        item.querySelectorAll('img.picture__image, img[class*="picture"]').forEach(img => {
+          const src = img.getAttribute('src')
+          if (src && src.startsWith('http') && !seenUrls.has(src)) {
+            seenUrls.add(src)
+            imageUrls.push(src)
+          }
+        })
+        const imageUrl = imageUrls[0] || null
 
         const neighborhood = location.split('•').map(s => s.trim())[0] || null
 
@@ -152,7 +164,7 @@ async function scrapePage(page, url) {
         if (url.includes('/apartments/') || url.includes('/studio/')) listingType = 'Apartment'
         if (url.includes('/rooms/')) listingType = 'Private room'
 
-        return title && url ? { title, price, priceText, location, neighborhood, size, rooms, url, imageUrl, listingType } : null
+        return title && url ? { title, price, priceText, location, neighborhood, size, rooms, url, imageUrl, imageUrls, listingType } : null
       } catch { return null }
     }).filter(Boolean)
   })
@@ -189,6 +201,52 @@ async function scrapeAllPages(page, startUrl, maxPages = 5) {
   }
 
   return allResults
+}
+
+// ---------------------------------------------------------------------------
+// Detail-page image scraper — visits each listing to grab full gallery
+// ---------------------------------------------------------------------------
+async function scrapeDetailImages(page, listings, maxDetail = 20) {
+  const toVisit = listings.slice(0, maxDetail)
+  console.log(`\n  Fetching detail images for up to ${toVisit.length} listings...`)
+
+  for (const listing of toVisit) {
+    try {
+      await page.goto(listing.url, { waitUntil: 'domcontentloaded', timeout: 20_000 })
+      // Scroll a bit to trigger lazy-loaded images
+      for (let i = 0; i < 5; i++) {
+        await page.evaluate(() => window.scrollBy(0, 400))
+        await page.waitForTimeout(150)
+      }
+
+      const images = await page.evaluate(() => {
+        const urls = new Set()
+        // Pararius detail pages use picture > source[srcset] and img tags in the gallery
+        document.querySelectorAll('.listing-detail-summary__photo source[srcset], .swiper source[srcset], .listing-photos source[srcset], [class*="gallery"] source[srcset], [class*="carousel"] source[srcset]').forEach(s => {
+          const srcset = s.getAttribute('srcset')
+          if (srcset) {
+            const parts = srcset.split(',')
+            const url = parts[parts.length - 1].trim().split(' ')[0]
+            if (url && url.startsWith('http')) urls.add(url)
+          }
+        })
+        document.querySelectorAll('.listing-detail-summary__photo img, .swiper img, .listing-photos img, [class*="gallery"] img, [class*="carousel"] img').forEach(img => {
+          const src = img.getAttribute('src')
+          if (src && src.startsWith('http') && !src.includes('placeholder') && !src.includes('logo')) urls.add(src)
+        })
+        return Array.from(urls)
+      })
+
+      if (images.length > 0) {
+        listing.imageUrls = images
+        listing.imageUrl = listing.imageUrl || images[0]
+        console.log(`    ${listing.title.slice(0, 40)}... — ${images.length} images`)
+      }
+    } catch (err) {
+      // Non-fatal: keep the listing with whatever images we already have
+      console.log(`    Skipped detail page: ${err.message.slice(0, 60)}`)
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -232,6 +290,7 @@ async function upsertListings(listings) {
       last_seen_at: now,
     }
     if (l.imageUrl) row.image_url = l.imageUrl
+    if (l.imageUrls && l.imageUrls.length > 0) row.images = JSON.stringify(l.imageUrls)
     return row
   })
 
@@ -282,6 +341,9 @@ async function main() {
     const listings = await scrapeAllPages(page, url, 3)
     allListings.push(...listings.map((l) => ({ ...l, city })))
   }
+
+  // Visit detail pages to scrape full image galleries
+  await scrapeDetailImages(page, allListings, 20)
 
   await browser.close()
 

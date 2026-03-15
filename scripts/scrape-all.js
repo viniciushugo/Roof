@@ -7,7 +7,7 @@
  *
  * Required env: SUPABASE_SERVICE_KEY (set in .env or inline)
  *
- * Runs: Pararius → Kamernet → Huurwoningen → HousingAnywhere → DirectWonen → Rentola → Kamer.nl → Image Upload
+ * Runs: Pararius → Kamernet → Huurwoningen → HousingAnywhere → DirectWonen → Rentola → Kamer.nl → Huurstunt → 123Wonen → Image Upload
  * Each scraper deduplicates by external_id so overlapping runs are safe.
  * Funda is excluded — their bot protection blocks all automated access.
  */
@@ -29,6 +29,8 @@ const scrapers = [
   { name: 'DirectWonen',     file: 'scrape-directwonen.js',     extra: '' },
   { name: 'Rentola',         file: 'scrape-rentola.js',        extra: '' },
   { name: 'Kamer.nl',        file: 'scrape-kamernl.js',        extra: '--type room' },
+  { name: 'Huurstunt',       file: 'scrape-huurstunt.js',      extra: '' },
+  { name: '123Wonen',        file: 'scrape-123wonen.js',       extra: '' },
 ]
 
 console.log('═'.repeat(60))
@@ -51,6 +53,18 @@ for (const { name, file, extra } of scrapers) {
     console.error(`\n❌ ${name} scraper failed: ${err.message}`)
     results.push({ name, ok: false, err: err.message })
   }
+}
+
+// Deactivate stale listings (not seen in 3+ days)
+console.log(`\n\n${'─'.repeat(60)}`)
+console.log('  ▶ Deactivate Stale Listings')
+console.log('─'.repeat(60))
+try {
+  execSync(`node ${path.join(dir, 'deactivate-stale.js')}`, { stdio: 'inherit', env: process.env })
+  results.push({ name: 'Deactivate Stale', ok: true })
+} catch (err) {
+  console.error(`\n❌ Deactivate stale failed: ${err.message}`)
+  results.push({ name: 'Deactivate Stale', ok: false, err: err.message })
 }
 
 // Batch-upload images to Supabase Storage

@@ -35,14 +35,16 @@ function parseCLI() {
 
 function buildSearchUrl(city, housingType, budgetMax) {
   const citySlug = city.toLowerCase().replace(/\s+/g, '-')
-  // Kamer.nl URL: /huren/kamers-city or /huren/studio-city etc.
-  let typePart = 'kamers' // default: rooms
+  // Kamer.nl URL pattern: /huren/kamer-city/ (singular, NOT "kamers")
+  // Type slugs: kamer (room), studio, appartement (apartment)
+  let typePart = 'kamer' // default: rooms
   if (housingType === 'studio') typePart = 'studio'
-  else if (housingType === 'apartment') typePart = 'appartementen'
-  else if (housingType === 'all') typePart = 'kamers'
+  else if (housingType === 'apartment') typePart = 'appartement'
+  else if (housingType === 'all') typePart = 'kamer'
 
   let url = `https://www.kamer.nl/huren/${typePart}-${citySlug}/`
-  if (budgetMax > 0) url += `?maxPrice=${budgetMax}`
+  // Price filter param is "max_price" (underscore, not camelCase)
+  if (budgetMax > 0) url += `?max_price=${budgetMax}`
   return url
 }
 
@@ -50,46 +52,69 @@ function stableId(url) {
   return crypto.createHash('sha256').update(`Kamer.nl:${url}`).digest('hex').slice(0, 32)
 }
 
+async function dismissCookies(page) {
+  // Kamer.nl uses Cookiebot — try multiple selectors
+  const selectors = [
+    'button:has-text("Accepteren")',
+    'button:has-text("Alle cookies toestaan")',
+    'button:has-text("Alles toestaan")',
+    '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
+    '#CybotCookiebotDialogBodyButtonDecline',
+  ]
+  for (const sel of selectors) {
+    const btn = page.locator(sel).first()
+    if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await btn.click()
+      await page.waitForTimeout(500)
+      return true
+    }
+  }
+  return false
+}
+
 async function scrapePage(page, url, city) {
   console.log(`\n  Fetching: ${url}`)
-  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 })
+  await page.goto(url, { waitUntil: 'networkidle', timeout: 30_000 })
 
-  // Handle cookie consent
-  const consent = page.locator('button:has-text("Accept"), button:has-text("Akkoord"), button:has-text("Accepteren"), [id*="cookie"] button')
-  if (await consent.first().isVisible({ timeout: 3000 }).catch(() => false)) {
-    await consent.first().click()
-    await page.waitForTimeout(500)
+  // Check for redirect — if URL changed to /huren/ we lost the city filter
+  const currentUrl = page.url()
+  if (currentUrl === 'https://www.kamer.nl/huren/' || currentUrl === 'https://www.kamer.nl/huren') {
+    console.log(`  ⚠️  Redirected to ${currentUrl} — city filter may not work with this URL`)
   }
 
-  // Wait for content and scroll to lazy-load
-  await page.waitForTimeout(3000)
-  for (let i = 0; i < 15; i++) {
-    await page.evaluate(() => window.scrollBy(0, 400))
-    await page.waitForTimeout(300)
+  // Handle cookie consent (only on first page load)
+  await dismissCookies(page)
+
+  // Wait for listing cards to appear
+  await page.waitForSelector('[class*="shadow-base"]', { timeout: 10_000 }).catch(() => {
+    console.log('  ⚠️  No listing cards found after waiting')
+  })
+
+  // Scroll to trigger lazy-loaded images
+  for (let i = 0; i < 10; i++) {
+    await page.evaluate(() => window.scrollBy(0, 500))
+    await page.waitForTimeout(200)
   }
 
+  // Primary extraction: parse listing cards from DOM
   const results = await page.evaluate((city) => {
-    // Kamer.nl uses listing cards — try multiple selectors
-    const cards = document.querySelectorAll(
-      '[class*="listing"], [class*="Listing"], [class*="result-item"], [class*="ResultItem"], ' +
-      '[class*="property-card"], [class*="PropertyCard"], article[class*="card"], ' +
-      'a[href*="/huren/kamer-"], a[href*="/huren/studio-"], a[href*="/huren/appartement-"]'
-    )
+    // Cards are divs with shadow-base class containing listing data
+    const cards = document.querySelectorAll('[class*="shadow-base"]')
 
     const seen = new Set()
     return Array.from(cards).map(card => {
       try {
-        // Get the listing link
-        let href = ''
-        if (card.tagName === 'A') {
-          href = card.getAttribute('href') || ''
-        } else {
-          const link = card.querySelector('a[href*="/huren/"]')
-          href = link?.getAttribute('href') || ''
-        }
+        // Get the listing link — main link has class "absolute inset-0"
+        const link = card.querySelector('a[href*="/huren/"]')
+        if (!link) return null
+        const href = link.getAttribute('href') || ''
         if (!href || href === '/' || href === '#') return null
-        // Skip category/search pages (short paths)
-        if (href.match(/^\/huren\/[a-z]+-[a-z]+\/?$/) && !href.includes('kamer-') && !href.includes('studio-') && !href.includes('appartement-')) return null
+
+        // Must be an individual listing (has numeric ID in URL path)
+        // Pattern: /huren/kamer-amsterdam/neighborhood/123456/
+        const pathParts = href.replace(/\/$/, '').split('/')
+        const lastPart = pathParts[pathParts.length - 1] || ''
+        if (!/\d/.test(lastPart)) return null
 
         const listingUrl = href.startsWith('http') ? href : 'https://www.kamer.nl' + href
 
@@ -99,57 +124,66 @@ async function scrapePage(page, url, city) {
 
         const allText = card.textContent || ''
 
-        // Price: "€ 750" or "€750" or "750 per maand"
-        const priceMatch = allText.match(/€\s*([\d.,\s]+)/)
+        // Price: look for "€ 675 p/m" pattern in the price element
+        const priceEl = card.querySelector('p[class*="flex-none"]')
+        const priceText = priceEl?.textContent?.trim() || ''
+        const priceMatch = priceText.match(/€\s*([\d.,]+)/) || allText.match(/€\s*([\d.,]+)/)
         const price = priceMatch ? parseInt(priceMatch[1].replace(/[.,\s]/g, '')) : 0
         if (price <= 0 || price > 10000) return null
 
-        // Size
-        const sizeMatch = allText.match(/(\d+)\s*m²/)
-        const size = sizeMatch ? parseInt(sizeMatch[1]) : null
-
-        // Rooms
-        const roomsMatch = allText.match(/(\d+)\s*(?:kamer|bedroom|slaapkamer|room)/i)
-        const rooms = roomsMatch ? parseInt(roomsMatch[1]) : null
-
-        // Image
-        const imgEl = card.querySelector('img')
-        const imageUrl = imgEl?.getAttribute('src') || imgEl?.getAttribute('data-src') || null
-
-        // Type detection from URL and text
-        let listingType = 'Private room' // kamer.nl is primarily rooms
-        const textLower = allText.toLowerCase()
-        if (href.includes('studio-') || textLower.includes('studio')) listingType = 'Studio'
-        else if (href.includes('appartement-') || textLower.includes('appartement') || textLower.includes('apartment')) listingType = 'Apartment'
-
-        // Neighborhood from text
+        // Location: "Neighborhood,City" from the location/title element
+        const locationEl = card.querySelector('p[class*="overflow-hidden"]')
+        const locationText = locationEl?.textContent?.trim() || ''
         let neighborhood = ''
-        // Try to extract from structured elements
-        const locationEl = card.querySelector('[class*="location"], [class*="address"], [class*="Location"], [class*="Address"]')
-        if (locationEl) {
-          neighborhood = locationEl.textContent.trim()
+        if (locationText.includes(',')) {
+          neighborhood = locationText.split(',')[0].trim()
         }
+
+        // If no neighborhood from element, try the link title attribute
         if (!neighborhood) {
-          // Try from URL slug: /huren/kamer-amsterdam-de-pijp-123
-          const urlParts = href.replace(/\/$/, '').split('/')
-          const lastPart = urlParts[urlParts.length - 1] || ''
-          // Remove type prefix and city, keep neighborhood
-          const parts = lastPart.split('-')
-          // Skip first part (kamer/studio/appartement) and try to find neighborhood
-          if (parts.length > 3) {
-            // Remove type (kamer) and city (amsterdam) and ID (numbers at end)
-            const withoutType = parts.slice(1) // remove kamer/studio/etc
-            const withoutId = withoutType.filter(p => !/^\d+$/.test(p)) // remove numeric IDs
-            // Remove city name
-            const cityLower = city.toLowerCase()
-            const withoutCity = withoutId.filter(p => p !== cityLower)
-            if (withoutCity.length > 0) {
-              neighborhood = withoutCity.join(' ').replace(/\b\w/g, c => c.toUpperCase())
+          const linkTitle = link.getAttribute('title') || ''
+          // "Kamer De Baarsjes in Amsterdam" -> "De Baarsjes"
+          const titleMatch = linkTitle.match(/(?:Kamer|Studio|Appartement)\s+(.+?)\s+in\s+/i)
+          if (titleMatch) neighborhood = titleMatch[1]
+        }
+
+        // If still no neighborhood, extract from URL
+        if (!neighborhood) {
+          // /huren/kamer-amsterdam/de-baarsjes/653297/ -> "de-baarsjes"
+          if (pathParts.length >= 4) {
+            const neighborhoodSlug = pathParts[pathParts.length - 2] || ''
+            if (neighborhoodSlug && !/^\d+$/.test(neighborhoodSlug)) {
+              neighborhood = neighborhoodSlug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
             }
           }
         }
 
-        // Furnished detection
+        // Size: "14m²"
+        const sizeMatch = allText.match(/(\d+)\s*m²/)
+        const size = sizeMatch ? parseInt(sizeMatch[1]) : null
+
+        // Rooms: "1 kamer"
+        const roomsMatch = allText.match(/(\d+)\s*(?:kamer|bedroom|slaapkamer|room)/i)
+        const rooms = roomsMatch ? parseInt(roomsMatch[1]) : null
+
+        // Image: first non-icon img in the card
+        const imgs = card.querySelectorAll('img')
+        let imageUrl = null
+        for (const img of imgs) {
+          const src = img.getAttribute('src') || img.getAttribute('data-src') || ''
+          if (src && !src.startsWith('data:') && !src.includes('/icons/') && src.includes('objectimage')) {
+            imageUrl = src
+            break
+          }
+        }
+
+        // Type detection from URL
+        let listingType = 'Private room'
+        if (href.includes('/studio-') || href.includes('studio')) listingType = 'Studio'
+        else if (href.includes('/appartement-') || href.includes('appartement')) listingType = 'Apartment'
+
+        // Furnished detection from description text
+        const textLower = allText.toLowerCase()
         let furnished = null
         if (textLower.includes('gemeubileerd') || textLower.includes('furnished')) furnished = 'furnished'
         else if (textLower.includes('gestoffeerd') || textLower.includes('upholstered')) furnished = 'upholstered'
@@ -162,7 +196,7 @@ async function scrapePage(page, url, city) {
           price,
           priceText: `€${price}`,
           url: listingUrl,
-          imageUrl: imageUrl && !imageUrl.startsWith('data:') ? imageUrl : null,
+          imageUrl,
           size,
           rooms,
           city,
@@ -188,14 +222,20 @@ async function scrapeAllPages(page, startUrl, city, maxPages = 3) {
     const results = await scrapePage(page, currentUrl, city)
     all.push(...results)
 
-    // Try pagination
-    const nextBtn = page.locator('a[rel="next"], a:has-text("Volgende"), a:has-text("Next"), button:has-text("Volgende"), [class*="pagination"] a:last-child').first()
-    const hasNext = await nextBtn.isVisible({ timeout: 2000 }).catch(() => false)
+    // Pagination: kamer.nl uses ?page=N and "Volgende pagina" link
+    const nextLink = page.locator('a:has-text("Volgende pagina")').first()
+    const hasNext = await nextLink.isVisible({ timeout: 2000 }).catch(() => false)
     if (hasNext && results.length > 0) {
-      await nextBtn.click()
-      await page.waitForTimeout(3000)
-      currentUrl = page.url()
-      pageNum++
+      const nextHref = await nextLink.getAttribute('href').catch(() => null)
+      if (nextHref) {
+        // Build absolute URL from relative href like "./?page=2"
+        const base = page.url().split('?')[0]
+        const params = nextHref.includes('?') ? nextHref.split('?')[1] : ''
+        currentUrl = params ? `${base}?${params}` : base
+        pageNum++
+      } else {
+        break
+      }
     } else {
       break
     }
@@ -249,7 +289,7 @@ async function main() {
   const browser = await chromium.launch({ headless: true })
   const context = await browser.newContext({
     userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-    locale: 'en-US',
+    locale: 'nl-NL',
     viewport: { width: 1280, height: 800 },
   })
   const page = await context.newPage()

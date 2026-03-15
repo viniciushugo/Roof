@@ -8,12 +8,14 @@ export interface Listing {
   size: number
   rooms: number
   furnished: 'furnished' | 'unfurnished' | 'upholstered'
-  source: 'Pararius' | 'Kamernet' | 'Huurwoningen' | 'Funda' | 'HousingAnywhere' | 'DirectWonen' | 'Rentola' | 'Kamer.nl'
+  source: 'Pararius' | 'Kamernet' | 'Huurwoningen' | 'Funda' | 'HousingAnywhere' | 'DirectWonen' | 'Rentola' | 'Kamer.nl' | 'Huurstunt' | '123Wonen'
   url: string
   image: string
+  images: string[]
   availableFrom: string
   isNew: boolean
   postedAt: string
+  postedAtRaw: string
   description: string
 }
 
@@ -31,9 +33,11 @@ export const listings: Listing[] = [
     source: 'Kamernet',
     url: 'https://kamernet.nl',
     image: 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=800&q=80',
+    images: ['https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=800&q=80'],
     availableFrom: '2026-04-01',
     isNew: true,
     postedAt: '2 min ago',
+    postedAtRaw: new Date().toISOString(),
     description: 'Bright room in a shared apartment with 2 other young professionals. Near tram stop.',
   },
   {
@@ -49,9 +53,11 @@ export const listings: Listing[] = [
     source: 'Pararius',
     url: 'https://pararius.nl',
     image: 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=800&q=80',
+    images: ['https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=800&q=80'],
     availableFrom: '2026-03-15',
     isNew: true,
     postedAt: '8 min ago',
+    postedAtRaw: new Date().toISOString(),
     description: 'Fully furnished studio in the heart of De Pijp. Includes utilities.',
   },
   {
@@ -67,9 +73,11 @@ export const listings: Listing[] = [
     source: 'Huurwoningen',
     url: 'https://housinganywhere.com',
     image: 'https://images.unsplash.com/photo-1631049307264-da0ec9d70304?w=800&q=80',
+    images: ['https://images.unsplash.com/photo-1631049307264-da0ec9d70304?w=800&q=80'],
     availableFrom: '2026-04-15',
     isNew: false,
     postedAt: '1 hr ago',
+    postedAtRaw: new Date().toISOString(),
     description: 'Beautiful room in iconic Jordaan canal house. High ceilings, great light.',
   },
   {
@@ -85,9 +93,11 @@ export const listings: Listing[] = [
     source: 'Kamernet',
     url: 'https://kamernet.nl',
     image: 'https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=800&q=80',
+    images: ['https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=800&q=80'],
     availableFrom: '2026-03-20',
     isNew: false,
     postedAt: '3 hr ago',
+    postedAtRaw: new Date().toISOString(),
     description: '5-minute bike ride to VU Amsterdam. Shared house with 3 international students.',
   },
   {
@@ -103,9 +113,11 @@ export const listings: Listing[] = [
     source: 'Funda',
     url: 'https://funda.nl',
     image: 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&q=80',
+    images: ['https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&q=80'],
     availableFrom: '2026-05-01',
     isNew: true,
     postedAt: '15 min ago',
+    postedAtRaw: new Date().toISOString(),
     description: 'Two-bedroom apartment with private garden. Close to Vondelpark.',
   },
   {
@@ -121,9 +133,11 @@ export const listings: Listing[] = [
     source: 'Huurwoningen',
     url: 'https://housinganywhere.com',
     image: 'https://images.unsplash.com/photo-1616594039964-ae9021a400a0?w=800&q=80',
+    images: ['https://images.unsplash.com/photo-1616594039964-ae9021a400a0?w=800&q=80'],
     availableFrom: '2026-04-01',
     isNew: false,
     postedAt: '5 hr ago',
+    postedAtRaw: new Date().toISOString(),
     description: 'Modern room with city views. 10 min ferry to Centraal Station.',
   },
   {
@@ -139,9 +153,11 @@ export const listings: Listing[] = [
     source: 'Pararius',
     url: 'https://pararius.nl',
     image: 'https://images.unsplash.com/photo-1493809842364-78817add7ffb?w=800&q=80',
+    images: ['https://images.unsplash.com/photo-1493809842364-78817add7ffb?w=800&q=80'],
     availableFrom: '2026-04-01',
     isNew: true,
     postedAt: '22 min ago',
+    postedAtRaw: new Date().toISOString(),
     description: 'Renovated studio with south-facing balcony. Close to Oosterpark.',
   },
   {
@@ -157,9 +173,11 @@ export const listings: Listing[] = [
     source: 'Kamernet',
     url: 'https://kamernet.nl',
     image: 'https://images.unsplash.com/photo-1598928506311-c55ded91a20c?w=800&q=80',
+    images: ['https://images.unsplash.com/photo-1598928506311-c55ded91a20c?w=800&q=80'],
     availableFrom: '2026-03-25',
     isNew: false,
     postedAt: '8 hr ago',
+    postedAtRaw: new Date().toISOString(),
     description: 'Cozy room in friendly student house. Bills included. Great location.',
   },
   {
@@ -175,9 +193,11 @@ export const listings: Listing[] = [
     source: 'Pararius',
     url: 'https://pararius.nl',
     image: 'https://images.unsplash.com/photo-1484154218962-a197022b5858?w=800&q=80',
+    images: ['https://images.unsplash.com/photo-1484154218962-a197022b5858?w=800&q=80'],
     availableFrom: '2026-04-01',
     isNew: true,
     postedAt: '30 min ago',
+    postedAtRaw: new Date().toISOString(),
     description: 'Spacious 3-room apartment in the heart of Rotterdam. Near Blaak station.',
   },
   {
@@ -193,9 +213,11 @@ export const listings: Listing[] = [
     source: 'Huurwoningen',
     url: 'https://housinganywhere.com',
     image: 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800&q=80',
+    images: ['https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800&q=80'],
     availableFrom: '2026-03-20',
     isNew: false,
     postedAt: '2 hr ago',
+    postedAtRaw: new Date().toISOString(),
     description: 'Cozy studio 10 minutes from Utrecht Centraal. Fully equipped kitchen.',
   },
 ]
@@ -209,6 +231,8 @@ export const sourceColors: Record<Listing['source'], string> = {
   DirectWonen: '#0891B2',
   Rentola: '#D946EF',
   'Kamer.nl': '#F59E0B',
+  Huurstunt: '#14B8A6',
+  '123Wonen': '#6366F1',
 }
 
 export const ALL_NEIGHBORHOODS = [...new Set(listings.map((l) => l.neighborhood))]

@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 import { supabase } from '../lib/supabase'
+import { track } from '../lib/analytics'
 import { useAuth } from './AuthContext'
 
 interface SavedContextType {
@@ -37,6 +38,7 @@ export function SavedProvider({ children }: { children: ReactNode }) {
 
   const toggleSave = (listingId: string) => {
     const isSaving = !savedIds.has(listingId)
+    track(isSaving ? 'listing_saved' : 'listing_unsaved', { listing_id: listingId })
     setSavedIds((prev) => {
       const next = new Set(prev)
       isSaving ? next.add(listingId) : next.delete(listingId)

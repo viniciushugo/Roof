@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, ExternalLink, Copy, Check, Home, Ruler, Sparkles, Calendar } from 'lucide-react'
+import { X, ExternalLink, Copy, Check, Home, Ruler, Sparkles, Calendar, Share2 } from 'lucide-react'
+import { hapticLight } from '../../lib/haptics'
+import { track } from '../../lib/analytics'
 import { Listing } from '../../data/listings'
 import SourceBadge from './SourceBadge'
+import ImageGallery from './ImageGallery'
 
 function generateIntro(listing: Listing): string {
   const typeLabel =
@@ -48,8 +51,14 @@ export default function ListingModal({ listing, onClose, onViewed }: Props) {
     if (listing) {
       setIntroText(generateIntro(listing))
       onViewed?.(listing.id)
+      track('listing_viewed', {
+        listing_id: listing.id,
+        source: listing.source,
+        city: listing.city,
+        price: listing.price,
+      })
     }
-  }, [listing?.id])
+  }, [listing?.id, onViewed])
 
   const copyIntro = async () => {
     try {
@@ -87,14 +96,9 @@ export default function ListingModal({ listing, onClose, onViewed }: Props) {
             exit={{ y: '100%' }}
             transition={{ type: 'spring', damping: 32, stiffness: 300 }}
           >
-            {/* Hero image */}
+            {/* Hero image gallery */}
             <div className="relative flex-shrink-0 overflow-hidden rounded-t-[28px] bg-secondary">
-              <img
-                src={listing.image}
-                alt={listing.title}
-                onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.style.opacity = '0' }}
-                className="w-full aspect-[4/3] object-cover"
-              />
+              <ImageGallery images={listing.images} alt={listing.title} />
               <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/55 to-transparent pointer-events-none" />
               <div className="absolute top-3 inset-x-0 flex justify-center pointer-events-none">
                 <div className="w-10 h-1 rounded-full bg-white/60" />
@@ -171,6 +175,28 @@ export default function ListingModal({ listing, onClose, onViewed }: Props) {
 
               {/* Action buttons */}
               <div className="px-5 pb-8 flex gap-3">
+                {(typeof navigator !== 'undefined' && (navigator.share || navigator.clipboard)) && (
+                  <button
+                    onClick={async () => {
+                      hapticLight()
+                      track('listing_shared', { listing_id: listing.id, source: listing.source })
+                      try {
+                        await navigator.share({
+                          title: listing.title,
+                          text: `€${listing.price}/mo in ${listing.neighborhood || listing.city}`,
+                          url: listing.url,
+                        })
+                      } catch {
+                        try {
+                          await navigator.clipboard.writeText(listing.url)
+                        } catch {}
+                      }
+                    }}
+                    className="w-14 h-14 bg-secondary rounded-2xl flex items-center justify-center active:scale-[0.98] transition-all flex-shrink-0"
+                  >
+                    <Share2 size={18} strokeWidth={1.8} className="text-foreground" />
+                  </button>
+                )}
                 <button
                   onClick={copyIntro}
                   className={`flex-1 h-14 rounded-2xl text-[15px] font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-all ${

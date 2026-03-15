@@ -73,6 +73,26 @@ CREATE TRIGGER on_auth_user_created
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 
+-- Add notification preferences column to profiles
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS notification_prefs JSONB DEFAULT '{"instantAlerts":true,"emailAlerts":true,"dailyDigest":false}';
+
+
+-- ============================================================
+-- PUSH TOKENS  (device tokens for APNs / FCM)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS push_tokens (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID        NOT NULL REFERENCES profiles (id) ON DELETE CASCADE,
+  token       TEXT        NOT NULL,
+  platform    TEXT        NOT NULL DEFAULT 'ios',  -- 'ios' | 'android' | 'web'
+  created_at  TIMESTAMPTZ DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (user_id, token)
+);
+
+CREATE INDEX IF NOT EXISTS push_tokens_user_id_idx ON push_tokens (user_id);
+
+
 -- ============================================================
 -- ALERTS
 -- ============================================================
@@ -126,6 +146,11 @@ CREATE POLICY "alerts_self_all"   ON alerts FOR ALL USING (auth.uid() = user_id)
 ALTER TABLE saved_listings ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "saved_self_all" ON saved_listings FOR ALL USING (auth.uid() = user_id);
 
+-- push_tokens: each user can manage their own tokens; service role can read all
+ALTER TABLE push_tokens ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "push_tokens_self_all" ON push_tokens FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "push_tokens_service_read" ON push_tokens FOR SELECT USING (true);
+
 -- ============================================================
 -- Storage: listing-images bucket (run ONCE in SQL Editor)
 -- ============================================================
@@ -143,6 +168,25 @@ CREATE POLICY "listing_images_public_read"
 CREATE POLICY "listing_images_service_insert"
   ON storage.objects FOR INSERT
   WITH CHECK (bucket_id = 'listing-images');
+
+
+-- ============================================================
+-- ANALYTICS EVENTS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS analytics_events (
+  id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID         REFERENCES profiles(id) ON DELETE SET NULL,
+  event       TEXT         NOT NULL,
+  properties  JSONB        DEFAULT '{}',
+  created_at  TIMESTAMPTZ  DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_analytics_event   ON analytics_events(event);
+CREATE INDEX IF NOT EXISTS idx_analytics_created ON analytics_events(created_at);
+
+ALTER TABLE analytics_events ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "analytics_insert_all" ON analytics_events FOR INSERT WITH CHECK (true);
+CREATE POLICY "analytics_read_own"   ON analytics_events FOR SELECT USING (auth.uid() = user_id);
 
 
 -- ============================================================

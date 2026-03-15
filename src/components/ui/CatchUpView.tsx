@@ -21,6 +21,8 @@ const SOURCE_COLORS: Record<string, string> = {
   DirectWonen: 'bg-cyan-50 text-cyan-700',
   Rentola: 'bg-fuchsia-50 text-fuchsia-700',
   'Kamer.nl': 'bg-amber-50 text-amber-700',
+  Huurstunt: 'bg-teal-50 text-teal-700',
+  '123Wonen': 'bg-indigo-50 text-indigo-700',
 }
 
 const SWIPE_THRESHOLD = 80

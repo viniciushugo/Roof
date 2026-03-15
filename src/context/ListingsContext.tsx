@@ -35,8 +35,21 @@ function isRecent(iso: string, hours = 24): boolean {
   return Date.now() - new Date(iso).getTime() < hours * 60 * 60 * 1000
 }
 
+function parseImages(row: Record<string, unknown>): string[] {
+  // Try the dedicated images JSON column first
+  if (row.images) {
+    try {
+      const parsed = typeof row.images === 'string' ? JSON.parse(row.images) : row.images
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed as string[]
+    } catch { /* fall through */ }
+  }
+  // Fallback: wrap the single image_url into an array
+  const single = (row.image_url as string) || ''
+  return single ? [single] : []
+}
+
 function rowToListing(row: Record<string, unknown>): Listing {
-  const firstSeen = (row.first_seen_at as string) ?? (row.last_seen_at as string) ?? new Date().toISOString()
+  const createdAt = (row.created_at as string) ?? (row.first_seen_at as string) ?? (row.last_seen_at as string) ?? new Date().toISOString()
   return {
     id: row.id as string,
     title: row.title as string,
@@ -50,11 +63,55 @@ function rowToListing(row: Record<string, unknown>): Listing {
     source: (row.source as Listing['source']) ?? 'Pararius',
     url: row.url as string,
     image: (row.image_url as string) || '',
+    images: parseImages(row),
     availableFrom: (row.available_from as string) ?? '',
-    isNew: isRecent(firstSeen, 24),
-    postedAt: relativeTime(firstSeen),
+    isNew: isRecent(createdAt, 24),
+    postedAt: relativeTime(createdAt),
+    postedAtRaw: createdAt,
     description: (row.description as string) ?? '',
   }
+}
+
+/**
+ * Interleave listings so sources are blended rather than clustered.
+ * Groups by 6-hour time window, then round-robins sources within each window.
+ */
+function blendListings(rows: Listing[]): Listing[] {
+  const WINDOW_MS = 6 * 60 * 60 * 1000 // 6 hours
+  // Group into time windows
+  const windows = new Map<number, Listing[]>()
+  for (const r of rows) {
+    const t = new Date(r.postedAtRaw).getTime()
+    const bucket = Math.floor(t / WINDOW_MS)
+    if (!windows.has(bucket)) windows.set(bucket, [])
+    windows.get(bucket)!.push(r)
+  }
+
+  const result: Listing[] = []
+  // Process windows newest first
+  const sortedBuckets = [...windows.keys()].sort((a, b) => b - a)
+  for (const bucket of sortedBuckets) {
+    const group = windows.get(bucket)!
+    // Round-robin by source within this window
+    const bySource = new Map<string, Listing[]>()
+    for (const l of group) {
+      if (!bySource.has(l.source)) bySource.set(l.source, [])
+      bySource.get(l.source)!.push(l)
+    }
+    const sources = [...bySource.keys()]
+    let added = true
+    while (added) {
+      added = false
+      for (const src of sources) {
+        const arr = bySource.get(src)!
+        if (arr.length > 0) {
+          result.push(arr.shift()!)
+          added = true
+        }
+      }
+    }
+  }
+  return result
 }
 
 async function fetchFromSupabase(): Promise<Listing[]> {
@@ -62,8 +119,11 @@ async function fetchFromSupabase(): Promise<Listing[]> {
     .from('listings')
     .select('*')
     .eq('is_active', true)
-    .order('first_seen_at', { ascending: false })
-  if (data && !error) return data.map(rowToListing)
+    .order('created_at', { ascending: false })
+  if (data && !error) {
+    const listings = data.map(rowToListing)
+    return blendListings(listings)
+  }
   return []
 }
 

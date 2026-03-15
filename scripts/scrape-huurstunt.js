@@ -1,9 +1,9 @@
 /**
- * Rentola scraper — scrapes rentola.nl and upserts into Supabase
+ * Huurstunt scraper — scrapes huurstunt.nl and upserts into Supabase
  *
  * Usage:
- *   node scrape-rentola.js
- *   node scrape-rentola.js --city Amsterdam --type apartment --max 1500
+ *   node scrape-huurstunt.js
+ *   node scrape-huurstunt.js --city Amsterdam --type apartment --max 1500
  *
  * Required env: SUPABASE_SERVICE_KEY
  */
@@ -35,60 +35,56 @@ function parseCLI() {
 
 function buildSearchUrl(city, housingType, budgetMax) {
   const citySlug = city.toLowerCase().replace(/\s+/g, '-')
-  // Rentola URL pattern: /huren/city?type=X&price_to=Y
-  let url = `https://www.rentola.nl/huren/${citySlug}`
-  const params = []
-  if (housingType === 'room') params.push('type=room')
-  else if (housingType === 'studio') params.push('type=studio')
-  else if (housingType === 'apartment') params.push('type=apartment')
-  if (budgetMax > 0) params.push(`price_to=${budgetMax}`)
-  if (params.length > 0) url += '?' + params.join('&')
+  // Huurstunt URL pattern: /huren/city
+  // Filtering is done via sidebar on the page; URL supports basic city slug
+  let url = `https://www.huurstunt.nl/huren/${citySlug}`
   return url
 }
 
 function stableId(url) {
-  return crypto.createHash('sha256').update(`Rentola:${url}`).digest('hex').slice(0, 32)
+  return crypto.createHash('sha256').update(`Huurstunt:${url}`).digest('hex').slice(0, 32)
 }
 
-function mapType(text) {
-  const t = (text || '').toLowerCase()
-  if (t.includes('room') || t.includes('kamer')) return 'Private room'
+function mapType(urlOrText) {
+  const t = (urlOrText || '').toLowerCase()
   if (t.includes('studio')) return 'Studio'
-  if (t.includes('apartment') || t.includes('appartement')) return 'Apartment'
-  if (t.includes('shared') || t.includes('gedeeld')) return 'Shared room'
+  if (t.includes('kamer') && !t.includes('slaapkamer')) return 'Private room'
+  if (t.includes('appartement') || t.includes('apartment')) return 'Apartment'
+  if (t.includes('huurwoning') || t.includes('huis')) return 'House'
   return 'Apartment'
 }
 
-async function scrapePage(page, url, city) {
+async function scrapePage(page, url, city, budgetMax) {
   console.log(`\n  Fetching: ${url}`)
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 })
 
-  // Handle cookie consent — Rentola uses CookieYes
-  const consent = page.locator('button.cky-btn-accept, button:has-text("Alle cookies accepteren"), button:has-text("Accept All")')
+  // Handle cookie consent
+  const consent = page.locator('button:has-text("OK"), button:has-text("Accepteren"), button:has-text("Alle cookies")')
   if (await consent.first().isVisible({ timeout: 3000 }).catch(() => false)) {
     await consent.first().click()
     await page.waitForTimeout(1000)
   }
 
-  // Wait for content and scroll to lazy-load
+  // Wait for content and scroll to lazy-load all listings
   await page.waitForTimeout(3000)
-  for (let i = 0; i < 15; i++) {
-    await page.evaluate(() => window.scrollBy(0, 400))
+  for (let i = 0; i < 20; i++) {
+    await page.evaluate(() => window.scrollBy(0, 500))
     await page.waitForTimeout(300)
   }
 
-  const results = await page.evaluate((city) => {
-    // Rentola cards: div.rounded-xl.border inside <ul>, with <a href="/listings/..."> inside
-    const cards = document.querySelectorAll('div.rounded-xl.border')
+  const results = await page.evaluate((args) => {
+    const { city, budgetMax } = args
+    // Huurstunt uses article.z-20 for loaded listing cards
+    const cards = document.querySelectorAll('article.z-20')
 
     const seen = new Set()
     return Array.from(cards).map(card => {
       try {
-        // Find the listing link
-        const link = card.querySelector('a[href*="/listings/"]')
+        // Find the listing link ("Meer zien" link)
+        const link = card.querySelector('a[href*="huren/in"]')
         const href = link?.getAttribute('href') || ''
         if (!href) return null
-        const listingUrl = href.startsWith('http') ? href : 'https://www.rentola.nl' + href
+        const listingUrl = href.startsWith('http') ? href : 'https://www.huurstunt.nl' + href
 
         // Dedup
         if (seen.has(listingUrl)) return null
@@ -96,51 +92,53 @@ async function scrapePage(page, url, city) {
 
         const allText = card.textContent || ''
 
-        // Price: "1.450 € / maand" or "731 € / maand"
-        const priceMatch = allText.match(/([\d.,]+)\s*€/)
+        // Price: "€ 2.350" or "€ 1.750"
+        const priceMatch = allText.match(/€\s*([\d.,]+)/)
         let price = 0
         if (priceMatch) {
           price = parseInt(priceMatch[1].replace(/\./g, '').replace(',', ''))
         }
         if (price <= 0 || price > 10000) return null
 
-        // Size: "65 m²" from "van 65 m²"
-        const sizeMatch = allText.match(/(\d+)\s*m²/)
+        // Budget filter
+        if (budgetMax > 0 && price > budgetMax) return null
+
+        // Size: "72 m2" or "65 m2"
+        const sizeMatch = allText.match(/(\d+)\s*m2/i)
         const size = sizeMatch ? parseInt(sizeMatch[1]) : null
 
-        // Rooms: "2-slaapkamer" or "1-slaapkamer"
-        const roomsMatch = allText.match(/(\d+)-slaapkamer/i)
+        // Rooms: "3 kamers" or "2 kamers"
+        const roomsMatch = allText.match(/(\d+)\s*kamer/i)
         const rooms = roomsMatch ? parseInt(roomsMatch[1]) : null
 
+        // Street name from h3
+        const h3 = card.querySelector('h3')
+        const streetName = h3 ? h3.textContent.trim() : ''
+
         // Image
-        const imgEl = card.querySelector('img')
-        const imageUrl = imgEl?.getAttribute('src') || imgEl?.getAttribute('data-src') || null
+        const imgEl = card.querySelector('img[src*="rental-images"]')
+        const imageUrl = imgEl?.getAttribute('src') || null
 
-        // Type from text: "appartement", "huis", "kamer", "studio"
-        let listingType = 'Apartment'
+        // Type from URL path: /appartement/, /studio/, /huurwoning/, /kamer/
+        const listingType = (() => {
+          const u = listingUrl.toLowerCase()
+          if (u.includes('/studio/')) return 'Studio'
+          if (u.includes('/kamer/')) return 'Private room'
+          if (u.includes('/huurwoning/')) return 'House'
+          return 'Apartment'
+        })()
+
+        // Location: city name from the card text
+        const locationSpan = card.querySelector('ul li:last-child span')
+        const location = locationSpan ? locationSpan.textContent.trim() : city
+
+        // Furnished: check card text
         const textLower = allText.toLowerCase()
-        if (textLower.includes('kamer') && !textLower.includes('slaapkamer')) listingType = 'Private room'
-        else if (textLower.includes('studio')) listingType = 'Studio'
-        else if (textLower.includes('huis')) listingType = 'Apartment'
+        let furnished = null
+        if (textLower.includes('gemeubileerd') || textLower.includes('furnished')) furnished = true
+        if (textLower.includes('ongemeubileerd') || textLower.includes('unfurnished')) furnished = false
 
-        // Location: "Amsterdamse Poort, Flierbosdreef, 1102 CN Amsterdam"
-        // Pattern: after m² and before the price
-        let neighborhood = ''
-        const locMatch = allText.match(/m²(.+?)(?:\d+[.,]\d+\s*€|Netherlands)/s)
-        if (locMatch) {
-          const locText = locMatch[1].trim()
-          // Take first part (neighborhood/area name) before the street address
-          const parts = locText.split(',').map(s => s.trim())
-          if (parts.length > 0) {
-            neighborhood = parts[0]
-            // If first part looks like an area, use it; otherwise try second
-            if (neighborhood.match(/^\d/) && parts.length > 1) {
-              neighborhood = parts[1]
-            }
-          }
-        }
-
-        const title = neighborhood ? `${listingType} in ${neighborhood}` : `${listingType} in ${city}`
+        const title = streetName ? `${streetName}, ${location}` : `${listingType} in ${location}`
 
         return {
           title,
@@ -150,40 +148,32 @@ async function scrapePage(page, url, city) {
           imageUrl: imageUrl && !imageUrl.startsWith('data:') ? imageUrl : null,
           size,
           rooms,
-          city,
-          neighborhood,
+          city: location || city,
+          neighborhood: streetName || '',
           listingType,
-          furnished: null,
+          furnished,
         }
       } catch { return null }
     }).filter(Boolean)
-  }, city)
+  }, { city, budgetMax })
 
   console.log(`  Found ${(results || []).length} listings`)
   return results || []
 }
 
-async function scrapeAllPages(page, startUrl, city, maxPages = 3) {
+async function scrapeAllPages(page, startUrl, city, budgetMax, maxPages = 3) {
   const all = []
   let currentUrl = startUrl
   let pageNum = 1
 
   while (currentUrl && pageNum <= maxPages) {
     console.log(`\n📄 Page ${pageNum}`)
-    const results = await scrapePage(page, currentUrl, city)
+    const results = await scrapePage(page, currentUrl, city, budgetMax)
     all.push(...results)
 
-    // Try pagination
-    const nextBtn = page.locator('a[rel="next"], button:has-text("Next"), button:has-text("Volgende"), a:has-text("Next"), [class*="pagination"] a:last-child').first()
-    const hasNext = await nextBtn.isVisible({ timeout: 2000 }).catch(() => false)
-    if (hasNext && results.length > 0) {
-      await nextBtn.click()
-      await page.waitForTimeout(3000)
-      currentUrl = page.url()
-      pageNum++
-    } else {
-      break
-    }
+    // Huurstunt doesn't have traditional pagination — all listings load on one page
+    // No next page to navigate to
+    break
   }
   return all
 }
@@ -206,7 +196,7 @@ async function upsertListings(listings) {
       size: l.size,
       rooms: l.rooms,
       furnished: l.furnished,
-      source: 'Rentola',
+      source: 'Huurstunt',
       url: l.url,
       is_active: true,
       last_seen_at: now,
@@ -217,13 +207,13 @@ async function upsertListings(listings) {
 
   const { data, error } = await supabase.from('listings').upsert(rows, { onConflict: 'external_id' }).select('id')
   if (error) console.error('\n❌ Supabase error:', error.message)
-  else console.log(`\n✅ Upserted ${data?.length ?? rows.length} listing(s) from Rentola`)
+  else console.log(`\n✅ Upserted ${data?.length ?? rows.length} listing(s) from Huurstunt`)
 }
 
 async function main() {
   const { cities, housingType, budgetMax } = parseCLI()
   console.log('━'.repeat(60))
-  console.log('🏠  Rentola Scraper — Roof')
+  console.log('🏠  Huurstunt Scraper — Roof')
   console.log('━'.repeat(60))
   console.log(`Cities : ${cities.join(', ')}`)
   console.log(`Type   : ${housingType}`)
@@ -234,7 +224,7 @@ async function main() {
   const browser = await chromium.launch({ headless: true })
   const context = await browser.newContext({
     userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-    locale: 'en-US',
+    locale: 'nl-NL',
     viewport: { width: 1280, height: 800 },
   })
   const page = await context.newPage()
@@ -243,7 +233,7 @@ async function main() {
   for (const city of cities) {
     console.log(`\n🔍 Searching in ${city}...`)
     const url = buildSearchUrl(city, housingType, budgetMax)
-    const results = await scrapeAllPages(page, url, city, 3)
+    const results = await scrapeAllPages(page, url, city, budgetMax, 3)
     all.push(...results)
   }
 

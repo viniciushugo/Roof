@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useCallback, useMemo, useEffect, R
 import { ActiveFilters, DEFAULT_FILTERS } from '../components/ui/FiltersSheet'
 import { listings, Listing } from '../data/listings'
 import { supabase } from '../lib/supabase'
+import { track } from '../lib/analytics'
 import { useAuth } from './AuthContext'
 
 export interface Alert {
@@ -115,6 +116,13 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
   }, [user, loadAlerts])
 
   const addAlert = useCallback((data: Omit<Alert, 'id' | 'createdAt'>) => {
+    track('alert_created', {
+      name: data.name,
+      cities: data.cities,
+      housing_type: data.housingType,
+      budget_min: data.budgetMin,
+      budget_max: data.budgetMax,
+    })
     if (user) {
       supabase
         .from('alerts')

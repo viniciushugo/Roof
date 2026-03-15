@@ -21,6 +21,8 @@ const SOURCE_BADGE_BG: Record<string, string> = {
   DirectWonen: 'bg-cyan-50',
   Rentola: 'bg-fuchsia-50',
   'Kamer.nl': 'bg-amber-50',
+  Huurstunt: 'bg-teal-50',
+  '123Wonen': 'bg-indigo-50',
 }
 
 export default function AlertsPage() {

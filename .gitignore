@@ -8,3 +8,6 @@ ios/App/Pods/
 ios/App/build/
 .claude/
 supabase/.temp/
+AuthKey_*.p8
+Screenshots/
+Catch up feature/

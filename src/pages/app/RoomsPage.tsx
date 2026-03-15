@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 // framer-motion scroll only
 import { MapPin, Layers, Filter } from 'lucide-react'
 import { useScroll } from 'framer-motion'
@@ -8,6 +8,10 @@ import BottomNav from '../../components/layout/BottomNav'
 import { useSaved } from '../../context/SavedContext'
 import { useViewed } from '../../context/ViewedContext'
 import { useAlerts, alertMatchesListing } from '../../context/AlertsContext'
+import { useAppRating } from '../../hooks/useAppRating'
+import { usePushNotifications } from '../../hooks/usePushNotifications'
+import { useOnboarding } from '../../hooks/useOnboarding'
+import OnboardingTour from '../../components/ui/OnboardingTour'
 import FiltersSheet, {
   ActiveFilters,
   DEFAULT_FILTERS,
@@ -15,11 +19,13 @@ import FiltersSheet, {
 } from '../../components/ui/FiltersSheet'
 import CityPickerSheet from '../../components/ui/CityPickerSheet'
 import ListingCard from '../../components/ui/ListingCard'
+import ListingCardSkeleton from '../../components/ui/ListingCardSkeleton'
 import ListingModal from '../../components/ui/ListingModal'
 import PullToRefresh from '../../components/ui/PullToRefresh'
 import CatchUpView from '../../components/ui/CatchUpView'
+import { track } from '../../lib/analytics'
 
-const PLATFORM_FILTERS = ['All', 'Pararius', 'Kamernet', 'Huurwoningen', 'HousingAnywhere', 'DirectWonen', 'Rentola', 'Kamer.nl', 'Funda'] as const
+const PLATFORM_FILTERS = ['All', 'Pararius', 'Kamernet', 'Huurwoningen', 'HousingAnywhere', 'DirectWonen', 'Rentola', 'Kamer.nl', 'Huurstunt', '123Wonen', 'Funda'] as const
 type PlatformFilter = typeof PLATFORM_FILTERS[number]
 
 export default function RoomsPage() {
@@ -31,9 +37,16 @@ export default function RoomsPage() {
   const [selectedCities, setSelectedCities] = useState<string[]>([])
   const [activeListing, setActiveListing] = useState<Listing | null>(null)
   const { isSaved, toggleSave } = useSaved()
-  const { listings, refresh } = useListings()
+  const { listings, loading, refresh } = useListings()
   const { isViewed, markViewed } = useViewed()
   const { alerts } = useAlerts()
+  const { showTour, completeTour, skipTour } = useOnboarding()
+  useAppRating()
+  const handlePushOpen = useCallback((listingId: string) => {
+    const listing = listings.find((l) => l.id === listingId)
+    if (listing) setActiveListing(listing)
+  }, [listings])
+  usePushNotifications(handlePushOpen)
 
   const feedRef = useRef<HTMLDivElement>(null)
   const { scrollY } = useScroll({ container: feedRef })
@@ -47,6 +60,18 @@ export default function RoomsPage() {
   useEffect(() => {
     if (feedRef.current) feedRef.current.scrollTop = 0
   }, [platformFilter, filters, selectedCities])
+
+  // Track filter changes
+  const handleFiltersChange = useCallback((next: ActiveFilters) => {
+    setFilters(next)
+    track('filter_applied', { filters: next })
+  }, [])
+
+  // Track platform chip selection
+  const handlePlatformFilter = useCallback((p: PlatformFilter) => {
+    setPlatformFilter(p)
+    if (p !== 'All') track('source_filtered', { source: p })
+  }, [])
 
   const activeFilterCount = countActiveFilters(filters)
 
@@ -87,51 +112,58 @@ export default function RoomsPage() {
               {cityLabel} <span className="text-base">🇳🇱</span>
             </button>
             <p className="text-xs text-muted mt-0.5">
-              Listings from 8 platforms across the Netherlands
+              Listings from 10 platforms across the Netherlands
             </p>
           </div>
-          <button
-            onClick={() => setShowCatchUp(true)}
-            className="relative w-9 h-9 bg-secondary rounded-full flex items-center justify-center"
-          >
-            <Layers size={16} strokeWidth={1.8} />
-            {newCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white" />
-            )}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowFilters(true)}
+              className={`relative w-9 h-9 rounded-full flex items-center justify-center transition-all ${
+                activeFilterCount > 0
+                  ? 'bg-foreground text-white'
+                  : 'bg-secondary text-foreground'
+              }`}
+            >
+              <Filter size={16} strokeWidth={1.8} />
+              {activeFilterCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-red-500 border-2 border-white text-white text-[9px] font-bold flex items-center justify-center">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setShowCatchUp(true)}
+              data-tour="catchup"
+              className="relative w-9 h-9 bg-secondary rounded-full flex items-center justify-center"
+            >
+              <Layers size={16} strokeWidth={1.8} />
+              {newCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white" />
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Platform filter chips */}
         <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide pb-1">
-          {PLATFORM_FILTERS.map((p) => (
-            <button
-              key={p}
-              onClick={() => setPlatformFilter(p)}
-              className={`flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-medium border transition-all ${
-                platformFilter === p
-                  ? 'bg-foreground text-white border-foreground'
-                  : 'bg-white text-foreground border-border'
-              }`}
-            >
-              {p}
-            </button>
-          ))}
-
-          <button
-            onClick={() => setShowFilters(true)}
-            className={`relative flex-shrink-0 w-8 h-8 rounded-full border flex items-center justify-center ml-auto transition-all ${
-              activeFilterCount > 0
-                ? 'bg-foreground border-foreground text-white'
-                : 'border-border text-foreground'
-            }`}
-          >
-            <Filter size={14} />
-            {activeFilterCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-foreground border-2 border-white text-white text-[9px] font-bold flex items-center justify-center">
-                {activeFilterCount}
-              </span>
-            )}
-          </button>
+          {PLATFORM_FILTERS.map((p) => {
+            const count = p === 'All'
+              ? alertFiltered.length
+              : alertFiltered.filter((l) => l.source === p).length
+            return (
+              <button
+                key={p}
+                onClick={() => handlePlatformFilter(p)}
+                className={`flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-medium border transition-all ${
+                  platformFilter === p
+                    ? 'bg-foreground text-white border-foreground'
+                    : 'bg-white text-foreground border-border'
+                }`}
+              >
+                {p} · {count}
+              </button>
+            )
+          })}
         </div>
       </div>
 
@@ -149,7 +181,13 @@ export default function RoomsPage() {
       {/* Listings feed with pull-to-refresh */}
       <PullToRefresh onRefresh={refresh} scrollRef={feedRef}>
         <div className="min-h-full pb-4 flex flex-col">
-          {platformFilter === 'Funda' ? (
+          {loading ? (
+            <div className="px-5 space-y-4 pt-2">
+              {[0, 1, 2].map((i) => (
+                <ListingCardSkeleton key={i} />
+              ))}
+            </div>
+          ) : platformFilter === 'Funda' ? (
             <div className="flex flex-col flex-1 items-center justify-center gap-3 px-8 text-center">
               <div className="w-14 h-14 bg-orange-50 rounded-3xl flex items-center justify-center text-2xl">
                 🏗
@@ -211,7 +249,7 @@ export default function RoomsPage() {
       <FiltersSheet
         open={showFilters}
         filters={filters}
-        onChange={setFilters}
+        onChange={handleFiltersChange}
         onClose={() => setShowFilters(false)}
         onReset={() => setFilters(DEFAULT_FILTERS)}
       />
@@ -230,6 +268,8 @@ export default function RoomsPage() {
       />
 
       <ListingModal listing={activeListing} onClose={() => setActiveListing(null)} onViewed={markViewed} />
+
+      {showTour && <OnboardingTour onComplete={completeTour} onSkip={skipTour} />}
     </div>
   )
 }
