@@ -7,52 +7,61 @@ import {
   animate,
   AnimatePresence,
 } from 'framer-motion'
-import { X, Undo2, Bookmark, SkipForward, Home, Sparkles } from 'lucide-react'
+import { X, Undo2, Bookmark, SkipForward, Home, Sparkles, Ruler } from 'lucide-react'
 import { Listing } from '../../data/listings'
 import { useListings } from '../../context/ListingsContext'
 import { useSaved } from '../../context/SavedContext'
 
-// ─── Source badge colours ───────────────────────────────────────────────────
+// ─── Source badge colours ────────────────────────────────────────────────────
 const SOURCE_COLORS: Record<string, string> = {
-  Pararius: 'bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300',
-  Kamernet: 'bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300',
-  Huurwoningen: 'bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300',
-  Funda: 'bg-orange-50 dark:bg-orange-950 text-orange-700 dark:text-orange-300',
-  HousingAnywhere: 'bg-purple-50 dark:bg-purple-950 text-purple-700 dark:text-purple-300',
-  DirectWonen: 'bg-cyan-50 dark:bg-cyan-950 text-cyan-700 dark:text-cyan-300',
-  Rentola: 'bg-fuchsia-50 dark:bg-fuchsia-950 text-fuchsia-700 dark:text-fuchsia-300',
-  'Kamer.nl': 'bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300',
-  Huurstunt: 'bg-teal-50 dark:bg-teal-950 text-teal-700 dark:text-teal-300',
-  '123Wonen': 'bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300',
+  Pararius:        'bg-blue-500/90 text-white',
+  Kamernet:        'bg-red-500/90 text-white',
+  Huurwoningen:    'bg-emerald-500/90 text-white',
+  Funda:           'bg-orange-500/90 text-white',
+  HousingAnywhere: 'bg-purple-500/90 text-white',
+  DirectWonen:     'bg-cyan-500/90 text-white',
+  Rentola:         'bg-fuchsia-500/90 text-white',
+  'Kamer.nl':      'bg-amber-500/90 text-white',
+  Huurstunt:       'bg-teal-500/90 text-white',
+  '123Wonen':      'bg-indigo-500/90 text-white',
 }
 
-// ─── Constants ──────────────────────────────────────────────────────────────
-const SWIPE_THRESHOLD = 80
+// ─── Swipe constants ─────────────────────────────────────────────────────────
+const SWIPE_THRESHOLD  = 80
 const VELOCITY_THRESHOLD = 400
 
-// Circular arc: divides 2π into 8 segments → 45° per step
-// Gives a generous spread so background cards peek visibly from the sides
-const ANGLE_STEP = (2 * Math.PI) / 8
+// ─── Arc fan math ─────────────────────────────────────────────────────────────
+// Cards fan to the right along a circular arc.
+// ANGLE_STEP controls how spread-out each successive card is (radians).
+const ANGLE_STEP = (2 * Math.PI) / 9   // ≈ 40° per step
 
-// ─── Arc position helpers ────────────────────────────────────────────────────
-// Compute the arc offset (translate x/y, scale, rotate) for a card
-// at `stackIndex` positions behind the top card. stackIndex 0 = top card.
-// The arc starts at -π/2 (12 o'clock) and upcoming cards fan out to the right.
-// We negate the x so cards spread to the right (towards the queue).
-function arcPosition(stackIndex: number, radius: number) {
-  const angle = -Math.PI / 2 + stackIndex * ANGLE_STEP
-  // Offset from the active card's arc position (-π/2 → origin)
-  const dx = -((-radius * Math.cos(angle)) - 0)  // negate so next card is to the right
-  const dy = (radius * Math.sin(angle)) - (-radius) // relative to top position
-  const scale = Math.max(0.62, 1 - stackIndex * 0.14)
-  // Very subtle tilt — enough to show depth without making text illegible
-  const rotate = stackIndex * 4
-  return { dx, dy, scale, rotate }
+// Returns the Framer Motion translate/scale/rotate for a card at `stackIndex`
+// positions behind the top card. `radius` is half the container width.
+function arcOffset(stackIndex: number, radius: number) {
+  if (stackIndex === 0) return { x: 0, y: 0, scale: 1, rotate: 0 }
+
+  const angle     = -Math.PI / 2 + stackIndex * ANGLE_STEP
+  // Active card sits at angle -π/2; we compute dx/dy relative to that position
+  const activeX   = -radius * Math.cos(-Math.PI / 2)  // = 0
+  const activeY   =  radius * Math.sin(-Math.PI / 2)  // = -radius
+  const cardX     = -radius * Math.cos(angle)
+  const cardY     =  radius * Math.sin(angle)
+
+  // Negate dx so upcoming cards fan to the RIGHT
+  const dx        = -(cardX - activeX)
+  const dy        =  (cardY - activeY)
+  const scale     = Math.max(0.60, 1 - stackIndex * 0.13)
+  const rotate    = stackIndex * 4.5           // gentle tilt, stays readable
+
+  return { x: dx, y: dy, scale, rotate }
 }
 
-/* ─── Swipeable Card ────────────────────────────────────────────────────────
-   Top card: full drag behaviour (unchanged from before).
-   Background cards: arc-positioned, spring into place as top card commits.
+/* ─── Card component ─────────────────────────────────────────────────────────
+   The card is NO LONGER inset-0. It floats in the container with generous
+   horizontal margins, giving it the lifted, premium Alma-app feel.
+
+   Top card: draggable left/right with skip/save overlays (unchanged UX).
+   Background cards: arc-fanned via Framer Motion animate.
 */
 interface CardProps {
   listing: Listing
@@ -67,42 +76,43 @@ interface CardProps {
 function CatchUpCard({ listing, isTop, stackIndex, topX, radius, onPanEnd, onTap }: CardProps) {
   const hasDragged = useRef(false)
 
-  // Top card: rotate and show skip/save indicators as user drags
-  const dragRotate = useTransform(topX, [-200, 200], [-12, 12])
+  // Top-card drag effects
+  const dragRotate  = useTransform(topX, [-200, 200], [-10, 10])
   const saveOpacity = useTransform(topX, [0, SWIPE_THRESHOLD], [0, 1])
   const skipOpacity = useTransform(topX, [-SWIPE_THRESHOLD, 0], [1, 0])
 
-  // Arc position for background cards
-  const { dx, dy, scale, rotate } = arcPosition(stackIndex, radius)
+  const { x, y, scale, rotate } = arcOffset(stackIndex, radius)
 
   return (
     <motion.div
-      className="absolute inset-0"
+      // ── Positioned card: floats with side padding, does NOT span edge-to-edge ──
+      className="absolute"
       style={
         isTop
-          ? { x: topX, rotate: dragRotate, zIndex: 10, touchAction: 'none' }
-          : { zIndex: 10 - stackIndex }
+          ? {
+              // Top card: only topX / dragRotate drive position — arc is identity (0,0)
+              x: topX,
+              rotate: dragRotate,
+              zIndex: 10,
+              touchAction: 'none',
+              // Card geometry
+              width:      '84%',
+              left:       '8%',
+              top:        '4%',
+              bottom:     '4%',
+            }
+          : { zIndex: 10 - stackIndex, width: '84%', left: '8%', top: '4%', bottom: '4%' }
       }
       initial={false}
       animate={
         isTop
-          ? // Top card: always centred, scale=1 (springs in when becoming top)
-            { x: 0, y: 0, scale: 1, rotate: 0, opacity: 1 }
-          : // Background cards: fan along the circular arc
-            {
-              x: dx,
-              y: dy,
-              scale,
-              rotate,
-              opacity: stackIndex < 4 ? 1 : 0,
-            }
+          ? { x: 0, y: 0, scale: 1, rotate: 0, opacity: 1 }
+          : { x, y, scale, rotate, opacity: stackIndex < 4 ? 1 : 0 }
       }
       transition={
         isTop
-          ? // Instant position reset when card becomes top (drag takes over)
-            { duration: 0 }
-          : // Smooth spring for arc repositioning
-            { type: 'spring', stiffness: 280, damping: 28 }
+          ? { duration: 0 }          // instant reset when a new card takes the top spot
+          : { type: 'spring', stiffness: 260, damping: 26 }
       }
       onPanStart={isTop ? () => { hasDragged.current = false } : undefined}
       onPan={
@@ -115,81 +125,121 @@ function CatchUpCard({ listing, isTop, stackIndex, topX, radius, onPanEnd, onTap
       }
       onPanEnd={isTop ? onPanEnd : undefined}
     >
+      {/* ── The floating card shell ── */}
       <div
-        className="w-full h-full bg-background rounded-3xl shadow-lg border border-border overflow-hidden flex flex-col"
-        style={{ willChange: 'transform' }}
+        className="w-full h-full bg-background flex flex-col overflow-hidden"
+        style={{
+          borderRadius: 32,
+          boxShadow: isTop
+            ? '0 24px 64px rgba(0,0,0,0.18), 0 4px 16px rgba(0,0,0,0.08)'
+            : '0 12px 40px rgba(0,0,0,0.12)',
+          willChange: 'transform',
+        }}
         onClick={() => { if (isTop && !hasDragged.current) onTap() }}
       >
-        {/* Image */}
-        <div className="flex-1 relative bg-secondary overflow-hidden min-h-0">
+
+        {/* ── Image section (fills top ~60%) ── */}
+        <div className="relative bg-secondary overflow-hidden" style={{ flex: '0 0 58%' }}>
           {listing.image ? (
             <img
               src={listing.image}
               alt={listing.title}
-              className="w-full h-full object-contain select-none"
+              className="w-full h-full object-cover select-none"
               draggable={false}
               onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center">
-              <Home size={48} className="text-muted" strokeWidth={1} />
+              <Home size={40} className="text-muted/40" strokeWidth={1} />
             </div>
           )}
 
-          {/* Save indicator */}
+          {/* Gradient overlay so badge text is always legible */}
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.30) 0%, transparent 50%)' }}
+          />
+
+          {/* Source + time badge — bottom-left of image */}
+          <div className="absolute bottom-3 left-3 flex items-center gap-2">
+            <span
+              className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wide backdrop-blur-sm ${
+                SOURCE_COLORS[listing.source] ?? 'bg-black/60 text-white'
+              }`}
+            >
+              {listing.source}
+            </span>
+            <span className="text-[11px] font-medium text-white/90 drop-shadow">
+              {listing.postedAt}
+            </span>
+          </div>
+
+          {/* New badge */}
+          {listing.isNew && (
+            <div className="absolute top-3 left-3">
+              <span className="bg-green-500 text-white text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wide shadow">
+                New
+              </span>
+            </div>
+          )}
+
+          {/* ── SAVE indicator overlay ── */}
           {isTop && (
             <motion.div
-              className="absolute inset-0 bg-green-500/10 flex items-center justify-center pointer-events-none"
-              style={{ opacity: saveOpacity }}
+              className="absolute inset-0 flex items-center justify-center pointer-events-none"
+              style={{ opacity: saveOpacity, background: 'rgba(34,197,94,0.12)' }}
             >
-              <div className="bg-green-500 text-white px-5 py-2.5 rounded-2xl flex items-center gap-2 -rotate-12 shadow-lg">
-                <Bookmark size={18} strokeWidth={2.5} />
-                <span className="text-base font-bold tracking-wide">SAVED</span>
+              <div className="bg-green-500 text-white px-5 py-2.5 rounded-2xl flex items-center gap-2 -rotate-12 shadow-xl">
+                <Bookmark size={17} strokeWidth={2.5} />
+                <span className="text-sm font-bold tracking-widest uppercase">Saved</span>
               </div>
             </motion.div>
           )}
 
-          {/* Skip indicator */}
+          {/* ── SKIP indicator overlay ── */}
           {isTop && (
             <motion.div
-              className="absolute inset-0 bg-neutral-900/5 flex items-center justify-center pointer-events-none"
-              style={{ opacity: skipOpacity }}
+              className="absolute inset-0 flex items-center justify-center pointer-events-none"
+              style={{ opacity: skipOpacity, background: 'rgba(0,0,0,0.06)' }}
             >
-              <div className="bg-foreground text-background px-5 py-2.5 rounded-2xl flex items-center gap-2 rotate-12 shadow-lg">
-                <SkipForward size={18} strokeWidth={2.5} />
-                <span className="text-base font-bold tracking-wide">SKIP</span>
+              <div className="bg-foreground text-background px-5 py-2.5 rounded-2xl flex items-center gap-2 rotate-12 shadow-xl">
+                <SkipForward size={17} strokeWidth={2.5} />
+                <span className="text-sm font-bold tracking-widest uppercase">Skip</span>
               </div>
             </motion.div>
           )}
         </div>
 
-        {/* Details */}
-        <div className="p-5 flex-shrink-0">
-          <div className="flex items-center gap-2 mb-2">
-            <span
-              className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide ${
-                SOURCE_COLORS[listing.source] ?? 'bg-secondary text-muted'
-              }`}
-            >
-              {listing.source}
-            </span>
-            <span className="text-xs text-muted">{listing.postedAt}</span>
-          </div>
-          <p className="text-lg font-bold text-foreground">
+        {/* ── Details section (bottom ~42%) ── */}
+        <div className="flex flex-col justify-center px-5 py-4 flex-1 gap-1.5">
+          {/* Neighbourhood */}
+          <p className="text-[15px] font-semibold text-foreground leading-snug line-clamp-1">
             {listing.neighborhood || listing.city}
           </p>
-          <div className="flex items-center gap-2 mt-1">
-            <span className="text-[15px] text-foreground font-semibold">
-              €{listing.price.toLocaleString()}/mo
+
+          {/* Price — most prominent */}
+          <p className="text-[26px] font-black text-foreground leading-none tracking-tight">
+            €{listing.price.toLocaleString()}
+            <span className="text-sm font-normal text-muted ml-1">/mo</span>
+          </p>
+
+          {/* Metadata row */}
+          <div className="flex items-center gap-2 text-muted text-xs mt-0.5 flex-wrap">
+            <span className="flex items-center gap-1">
+              <Home size={11} strokeWidth={1.8} />
+              {listing.type}
             </span>
-            <span className="text-muted">·</span>
-            <span className="text-sm text-muted">{listing.type}</span>
             {listing.size > 0 && (
               <>
-                <span className="text-muted">·</span>
-                <span className="text-sm text-muted">{listing.size}m²</span>
+                <span className="w-1 h-1 rounded-full bg-border flex-shrink-0" />
+                <span className="flex items-center gap-1">
+                  <Ruler size={11} strokeWidth={1.8} />
+                  {listing.size}m²
+                </span>
               </>
             )}
+            <span className="w-1 h-1 rounded-full bg-border flex-shrink-0" />
+            <span className="capitalize">{listing.furnished}</span>
           </div>
         </div>
       </div>
@@ -197,7 +247,7 @@ function CatchUpCard({ listing, isTop, stackIndex, topX, radius, onPanEnd, onTap
   )
 }
 
-/* ─── Catch Up View ─────────────────────────────────────────────────────────*/
+/* ─── Catch Up View ──────────────────────────────────────────────────────────*/
 
 interface Props {
   open: boolean
@@ -221,14 +271,15 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
   const isAnimating = useRef(false)
   const topX = useMotionValue(0)
 
-  // Measure card container height so arc radius scales correctly
+  // Measure container width → radius for arc calculation
   const containerRef = useRef<HTMLDivElement>(null)
-  const [radius, setRadius] = useState(260)
+  const [radius, setRadius] = useState(200)
 
   useEffect(() => {
     const measure = () => {
       if (containerRef.current) {
-        setRadius(containerRef.current.offsetHeight * 0.55)
+        // radius = half container width gives a natural, tight arc fan
+        setRadius(containerRef.current.offsetWidth * 0.52)
       }
     }
     measure()
@@ -236,7 +287,7 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
     return () => window.removeEventListener('resize', measure)
   }, [])
 
-  // Reset state when opening
+  // Reset on open
   useEffect(() => {
     if (open) {
       setCurrentIndex(0)
@@ -246,10 +297,8 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
     }
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const isDone = currentIndex >= newListings.length
+  const isDone    = currentIndex >= newListings.length
   const remaining = Math.max(newListings.length - currentIndex, 0)
-
-  // Render top card + 3 background cards (the visible arc window)
   const visibleCards = newListings.slice(currentIndex, currentIndex + 4)
 
   const commitSwipe = useCallback(
@@ -260,9 +309,7 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
       const listing = newListings[currentIndex]
       if (!listing) { isAnimating.current = false; return }
 
-      if (direction === 'right' && !isSaved(listing.id)) {
-        toggleSave(listing.id)
-      }
+      if (direction === 'right' && !isSaved(listing.id)) toggleSave(listing.id)
 
       const dir = direction === 'right' ? 1 : -1
       animate(topX, dir * 500, {
@@ -288,7 +335,6 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
       const shouldSwipe =
         Math.abs(info.offset.x) > SWIPE_THRESHOLD ||
         Math.abs(info.velocity.x) > VELOCITY_THRESHOLD
-
       if (shouldSwipe) {
         commitSwipe(info.offset.x > 0 ? 'right' : 'left')
       } else {
@@ -301,16 +347,10 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
   const handleUndo = useCallback(() => {
     if (history.length === 0 || isAnimating.current) return
     isAnimating.current = true
-
     const last = history[history.length - 1]
-    if (last.action === 'save' && isSaved(last.listingId)) {
-      toggleSave(last.listingId)
-    }
-
+    if (last.action === 'save' && isSaved(last.listingId)) toggleSave(last.listingId)
     setCurrentIndex(last.index)
     setHistory((prev) => prev.slice(0, -1))
-
-    // Spring the card back in from the side it exited
     const dir = last.action === 'save' ? 1 : -1
     topX.set(dir * 500)
     animate(topX, 0, {
@@ -331,11 +371,11 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
           exit={{ opacity: 0, y: 40 }}
           transition={{ type: 'spring', damping: 30, stiffness: 300 }}
         >
-          {/* Header */}
+          {/* ── Header ── */}
           <div className="flex items-center justify-between px-5 pt-14 pb-3 flex-shrink-0">
             <button
               onClick={onClose}
-              className="w-9 h-9 bg-background rounded-full flex items-center justify-center active:opacity-60 shadow-sm text-foreground"
+              className="w-9 h-9 bg-secondary rounded-full flex items-center justify-center active:opacity-60 text-foreground"
             >
               <X size={16} strokeWidth={2} />
             </button>
@@ -361,17 +401,17 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
             <button
               onClick={handleUndo}
               disabled={history.length === 0}
-              className="w-9 h-9 bg-background rounded-full flex items-center justify-center active:opacity-60 shadow-sm disabled:opacity-30 transition-opacity text-foreground"
+              className="w-9 h-9 bg-secondary rounded-full flex items-center justify-center active:opacity-60 disabled:opacity-30 transition-opacity text-foreground"
             >
               <Undo2 size={15} strokeWidth={2} />
             </button>
           </div>
 
-          {/* Card arc stack */}
-          <div ref={containerRef} className="flex-1 px-5 pb-3 relative overflow-hidden">
+          {/* ── Arc card stack ── */}
+          <div ref={containerRef} className="flex-1 relative overflow-hidden">
             {newListings.length === 0 ? (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-8">
-                <div className="w-16 h-16 bg-background rounded-3xl flex items-center justify-center shadow-sm">
+                <div className="w-16 h-16 bg-secondary rounded-3xl flex items-center justify-center">
                   <Sparkles size={28} strokeWidth={1.5} className="text-muted" />
                 </div>
                 <h2 className="text-lg font-bold text-foreground">No new listings</h2>
@@ -380,7 +420,7 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
                 </p>
                 <button
                   onClick={onClose}
-                  className="mt-2 h-12 px-8 bg-foreground text-background rounded-full text-[15px] font-semibold active:scale-[0.98] transition-transform"
+                  className="mt-2 h-12 px-8 bg-foreground text-background rounded-full text-[15px] font-semibold"
                 >
                   Go back
                 </button>
@@ -401,13 +441,13 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
                 </p>
                 <button
                   onClick={onClose}
-                  className="mt-4 h-12 px-8 bg-foreground text-background rounded-full text-[15px] font-semibold active:scale-[0.98] transition-transform"
+                  className="mt-4 h-12 px-8 bg-foreground text-background rounded-full text-[15px] font-semibold"
                 >
                   Done
                 </button>
               </motion.div>
             ) : (
-              // Render top card + arc background cards (reversed so top card is last = on top)
+              // Render back→front so the top card is always painted last (on top)
               [...visibleCards].reverse().map((listing, reversedI) => {
                 const stackIndex = visibleCards.length - 1 - reversedI
                 return (
@@ -426,19 +466,19 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
             )}
           </div>
 
-          {/* Footer */}
+          {/* ── Footer ── */}
           {!isDone && newListings.length > 0 && (
-            <div className="flex gap-4 px-5 pb-8 pt-2 flex-shrink-0">
+            <div className="flex gap-3 px-5 pb-10 pt-3 flex-shrink-0">
               <button
                 onClick={() => commitSwipe('left')}
-                className="flex-1 h-14 bg-background rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-transform shadow-sm"
+                className="flex-1 h-14 bg-secondary rounded-2xl flex items-center justify-center gap-2 active:scale-[0.97] transition-transform"
               >
                 <SkipForward size={16} strokeWidth={2} className="text-foreground" />
                 <span className="text-[15px] font-semibold text-foreground">Skip</span>
               </button>
               <button
                 onClick={() => commitSwipe('right')}
-                className="flex-1 h-14 bg-foreground rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+                className="flex-1 h-14 bg-foreground rounded-2xl flex items-center justify-center gap-2 active:scale-[0.97] transition-transform"
               >
                 <Bookmark size={16} strokeWidth={2} className="text-background" />
                 <span className="text-[15px] font-semibold text-background">Save</span>
