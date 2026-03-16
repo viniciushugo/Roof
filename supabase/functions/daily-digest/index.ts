@@ -106,18 +106,6 @@ function buildDigestHtml(firstName: string, listings: Listing[], appUrl: string)
             </td>
           </tr>
 
-          <!-- Illustration placeholder -->
-          <tr>
-            <td align="center" style="padding:0 0 24px;">
-              <img
-                src="https://wzsdnhzsosonlcgubmxe.supabase.co/storage/v1/object/public/email-assets/digest-illustration.svg"
-                alt="Fresh listings delivered"
-                width="256"
-                height="208"
-                style="display:block;width:256px;height:208px;"
-              />
-            </td>
-          </tr>
 
           <!-- Intro text -->
           <tr>
@@ -226,10 +214,10 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Get all users with alerts and their email/name from profiles
+    // Get all alerts with profile names
     const { data: alerts, error: alertsError } = await supabase
       .from('alerts')
-      .select('*, profiles!alerts_user_id_fkey(name, email)')
+      .select('*, profiles(name)')
 
     if (alertsError || !alerts?.length) {
       return new Response(JSON.stringify({ sent: 0, reason: 'no_alerts' }), {
@@ -237,15 +225,26 @@ Deno.serve(async (req) => {
       })
     }
 
+    // Fetch auth user emails via admin API (emails live in auth.users, not profiles)
+    const uniqueUserIds = [...new Set(alerts.map((a: any) => a.user_id))]
+    const userEmailMap = new Map<string, string>()
+    await Promise.all(
+      uniqueUserIds.map(async (uid) => {
+        const { data } = await supabase.auth.admin.getUserById(uid)
+        if (data?.user?.email) userEmailMap.set(uid, data.user.email)
+      })
+    )
+
     // Group alerts by user
     const userMap = new Map<string, { name: string; email: string; alerts: any[] }>()
     for (const alert of alerts) {
+      const email = userEmailMap.get(alert.user_id)
+      if (!email) continue
       const profile = (alert as any).profiles
-      if (!profile?.email) continue
       if (!userMap.has(alert.user_id)) {
         userMap.set(alert.user_id, {
-          name: profile.name || 'there',
-          email: profile.email,
+          name: profile?.name || 'there',
+          email,
           alerts: [],
         })
       }

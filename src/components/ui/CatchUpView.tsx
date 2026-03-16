@@ -1,13 +1,13 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import {
   motion,
-  MotionValue,
   useMotionValue,
   useTransform,
   animate,
   AnimatePresence,
 } from 'framer-motion'
-import { X, Undo2, Heart, SkipForward, Sparkles } from 'lucide-react'
+import { X, Undo2, Heart, SkipForward, Sparkles, Share2 } from 'lucide-react'
+import { hapticLight } from '../../lib/haptics'
 import { Listing } from '../../data/listings'
 import { useListings } from '../../context/ListingsContext'
 import { useSaved } from '../../context/SavedContext'
@@ -20,123 +20,27 @@ const VELOCITY_THRESHOLD = 400
 // ─── Spring presets ───────────────────────────────────────────────────────────
 const SPRING_EXIT   = { type: 'spring' as const, stiffness: 160, damping: 20, mass: 0.75 }
 const SPRING_RETURN = { type: 'spring' as const, stiffness: 320, damping: 26, mass: 0.9 }
-const SPRING_ENTER  = { type: 'spring' as const, stiffness: 300, damping: 28, mass: 0.9 }
 const SPRING_UNDO   = { type: 'spring' as const, stiffness: 260, damping: 26, mass: 0.9 }
 
-/* ─── Card component ─────────────────────────────────────────────────────────
-   Two visual states:
-   • isTop=true  — full size, draggable, with Like/Skip overlays
-   • isTop=false — peeking card behind: smaller, slightly below, no interaction
+/* ─── Card shell ─────────────────────────────────────────────────────────────
+   Renders a ListingCard inside the rounded/shadow shell used by all card layers.
 */
-interface CardProps {
+function CardShell({ listing, isSaved, onToggleSave, onClick }: {
   listing: Listing
-  isTop: boolean
-  driveX: MotionValue<number>
   isSaved: boolean
   onToggleSave: () => void
-  onPanEnd?: (e: PointerEvent, info: { offset: { x: number }; velocity: { x: number } }) => void
-  onTap: () => void
-  withGestures?: boolean
-  overrideZIndex?: number
-}
-
-function CatchUpCard({
-  listing,
-  isTop,
-  driveX,
-  isSaved,
-  onToggleSave,
-  onPanEnd,
-  onTap,
-  withGestures = true,
-  overrideZIndex,
-}: CardProps) {
-  const hasDragged = useRef(false)
-
-  const dragRotate  = useTransform(driveX, [-200, 200], [-8, 8])
-  const likeOpacity = useTransform(driveX, [0, SWIPE_THRESHOLD], [0, 1])
-  const skipOpacity = useTransform(driveX, [-SWIPE_THRESHOLD, 0], [1, 0])
-
+  onClick: () => void
+}) {
   return (
-    <motion.div
-      className="absolute inset-x-4"
-      style={
-        isTop
-          ? {
-              x: driveX,
-              rotate: dragRotate,
-              top: 0,
-              bottom: 0,
-              zIndex: overrideZIndex ?? 10,
-              touchAction: withGestures ? 'none' : 'auto',
-              pointerEvents: withGestures ? 'auto' : 'none',
-              willChange: 'transform',
-            }
-          : {
-              // Peek card: visible bottom edge, scaled down slightly
-              bottom: -12,
-              height: '96%',
-              zIndex: overrideZIndex ?? 5,
-              willChange: 'transform',
-            }
-      }
-      initial={false}
-      animate={
-        !withGestures
-          ? { scale: 1, opacity: 1 }
-          : isTop
-            ? { scale: 1, y: 0, opacity: 1 }
-            : { scale: 0.95, y: 0, opacity: 1 }
-      }
-      transition={isTop ? SPRING_ENTER : { type: 'spring', stiffness: 280, damping: 26 }}
-      onPanStart={isTop && withGestures ? () => { hasDragged.current = false } : undefined}
-      onPan={
-        isTop && withGestures
-          ? (_, info) => {
-              driveX.set(info.offset.x)
-              if (Math.abs(info.offset.x) > 3) hasDragged.current = true
-            }
-          : undefined
-      }
-      onPanEnd={isTop && withGestures ? onPanEnd : undefined}
-    >
-      {/* Card shell */}
-      <div className="relative rounded-3xl overflow-hidden shadow-2xl h-full">
-        <ListingCard
-          listing={listing}
-          index={0}
-          onClick={() => { if (!hasDragged.current && withGestures) onTap() }}
-          isSaved={isSaved}
-          onToggleSave={onToggleSave}
-        />
-
-        {/* ── LIKE overlay ── */}
-        {isTop && (
-          <motion.div
-            className="absolute inset-0 flex items-center justify-center pointer-events-none rounded-3xl"
-            style={{ opacity: likeOpacity, background: 'rgba(34,197,94,0.10)' }}
-          >
-            <div className="bg-green-500 text-white px-5 py-2.5 rounded-2xl flex items-center gap-2 -rotate-12 shadow-xl">
-              <Heart size={17} strokeWidth={2.5} fill="white" />
-              <span className="text-sm font-bold tracking-widest uppercase">Liked</span>
-            </div>
-          </motion.div>
-        )}
-
-        {/* ── SKIP overlay ── */}
-        {isTop && (
-          <motion.div
-            className="absolute inset-0 flex items-center justify-center pointer-events-none rounded-3xl"
-            style={{ opacity: skipOpacity, background: 'rgba(0,0,0,0.05)' }}
-          >
-            <div className="bg-foreground text-background px-5 py-2.5 rounded-2xl flex items-center gap-2 rotate-12 shadow-xl">
-              <SkipForward size={17} strokeWidth={2.5} />
-              <span className="text-sm font-bold tracking-widest uppercase">Skip</span>
-            </div>
-          </motion.div>
-        )}
-      </div>
-    </motion.div>
+    <div className="rounded-3xl overflow-hidden shadow-lg">
+      <ListingCard
+        listing={listing}
+        index={0}
+        onClick={onClick}
+        isSaved={isSaved}
+        onToggleSave={onToggleSave}
+      />
+    </div>
   )
 }
 
@@ -162,10 +66,15 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
     { index: number; action: 'save' | 'skip'; listingId: string }[]
   >([])
   const isAnimating = useRef(false)
+  const hasDragged  = useRef(false)
 
-  const topX    = useMotionValue(0)
-  const exitX   = useMotionValue(0)
-  const peekX   = useMotionValue(0)   // stable MV for the non-interactive peek card
+  // All motion values at top level — never inside conditions (Rules of Hooks)
+  const topX        = useMotionValue(0)
+  const exitX       = useMotionValue(0)
+  const dragRotate  = useTransform(topX, [-220, 220], [-8, 8])
+  const likeOpacity = useTransform(topX, [0, SWIPE_THRESHOLD], [0, 1])
+  const skipOpacity = useTransform(topX, [-SWIPE_THRESHOLD, 0], [1, 0])
+
   const [exitingListing, setExitingListing] = useState<Listing | null>(null)
 
   useEffect(() => {
@@ -183,6 +92,8 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
   const remaining = Math.max(newListings.length - currentIndex, 0)
   const topCard   = newListings[currentIndex]
   const nextCard  = newListings[currentIndex + 1]
+  // Spacer uses the first listing so the container is always the right height
+  const spacerCard = newListings[0]
 
   const commitSwipe = useCallback(
     (direction: 'left' | 'right', throwVelocity = 0) => {
@@ -207,7 +118,7 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
       setCurrentIndex((prev) => prev + 1)
       isAnimating.current = false
 
-      animate(exitX, dir * 650, {
+      animate(exitX, dir * 700, {
         ...SPRING_EXIT,
         velocity: throwVelocity * dir,
         onComplete: () => {
@@ -249,6 +160,20 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
     })
   }, [history, isSaved, toggleSave, topX])
 
+  const handleShare = useCallback(async () => {
+    if (!topCard) return
+    hapticLight()
+    try {
+      await navigator.share({
+        title: topCard.title,
+        text: `€${topCard.price.toLocaleString()}/mo in ${topCard.neighborhood}`,
+        url: topCard.url,
+      })
+    } catch {
+      try { await navigator.clipboard.writeText(topCard.url) } catch {}
+    }
+  }, [topCard])
+
   return (
     <AnimatePresence>
       {open && (
@@ -260,45 +185,51 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
           transition={{ type: 'spring', damping: 30, stiffness: 300 }}
         >
           {/* ── Header ── */}
-          <div className="flex items-center justify-between px-5 pt-header pb-3 flex-shrink-0">
-            <button
-              onClick={onClose}
-              className="w-9 h-9 bg-secondary rounded-full flex items-center justify-center active:opacity-60 text-foreground"
-            >
-              <X size={16} strokeWidth={2} />
-            </button>
+          <div className="flex-shrink-0 px-5 pt-header pb-3 flex items-center justify-between">
+            <h1 className="text-2xl font-bold text-foreground">Catch Up</h1>
 
-            {!isDone && newListings.length > 0 && (
-              <div className="flex items-center gap-1 overflow-hidden">
-                <AnimatePresence mode="popLayout">
-                  <motion.span
-                    key={remaining}
-                    className="text-[15px] font-bold text-foreground tabular-nums"
-                    initial={{ opacity: 0, y: -8, scale: 0.7 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 8, scale: 0.7 }}
-                    transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                  >
-                    {remaining}
-                  </motion.span>
-                </AnimatePresence>
-                <span className="text-[15px] font-bold text-foreground"> new</span>
-              </div>
-            )}
+            <div className="flex items-center gap-2">
+              {!isDone && newListings.length > 0 && (
+                <div className="flex items-center gap-1 bg-secondary px-3 py-1 rounded-full">
+                  <AnimatePresence mode="popLayout">
+                    <motion.span
+                      key={remaining}
+                      className="text-[13px] font-bold text-foreground tabular-nums"
+                      initial={{ opacity: 0, y: -6, scale: 0.7 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 6, scale: 0.7 }}
+                      transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                    >
+                      {remaining}
+                    </motion.span>
+                  </AnimatePresence>
+                  <span className="text-[13px] font-medium text-muted">new</span>
+                </div>
+              )}
 
-            <button
-              onClick={handleUndo}
-              disabled={history.length === 0}
-              className="w-9 h-9 bg-secondary rounded-full flex items-center justify-center active:opacity-60 disabled:opacity-30 transition-opacity text-foreground"
-            >
-              <Undo2 size={15} strokeWidth={2} />
-            </button>
+              <button
+                onClick={handleUndo}
+                disabled={history.length === 0}
+                className="w-9 h-9 bg-secondary rounded-full flex items-center justify-center active:opacity-60 disabled:opacity-30 transition-opacity text-foreground"
+              >
+                <Undo2 size={15} strokeWidth={2} />
+              </button>
+
+              <button
+                onClick={onClose}
+                className="w-9 h-9 bg-secondary rounded-full flex items-center justify-center active:opacity-60 text-foreground"
+              >
+                <X size={16} strokeWidth={2} />
+              </button>
+            </div>
           </div>
 
-          {/* ── Card area ── */}
-          <div className="flex-1 relative pb-4 px-0">
-            {newListings.length === 0 ? (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-8">
+          {/* ── Card area — flex-centered ── */}
+          <div className="flex-1 flex flex-col justify-center overflow-hidden">
+
+            {/* Empty state */}
+            {newListings.length === 0 && (
+              <div className="flex flex-col items-center justify-center gap-4 px-8">
                 <div className="w-16 h-16 bg-secondary rounded-3xl flex items-center justify-center">
                   <Sparkles size={28} strokeWidth={1.5} className="text-muted" />
                 </div>
@@ -313,12 +244,15 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
                   Go back
                 </button>
               </div>
-            ) : isDone ? (
+            )}
+
+            {/* Done state */}
+            {newListings.length > 0 && isDone && (
               <motion.div
-                className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-8"
-                initial={{ opacity: 0, scale: 0.8 }}
+                className="flex flex-col items-center justify-center gap-4 px-8"
+                initial={{ opacity: 0, scale: 0.85 }}
                 animate={{ opacity: 1, scale: 1 }}
-                transition={{ type: 'spring', damping: 20, stiffness: 200, delay: 0.15 }}
+                transition={{ type: 'spring', damping: 20, stiffness: 200, delay: 0.1 }}
               >
                 <span className="text-6xl mb-2">🏠</span>
                 <h2 className="text-2xl font-bold text-foreground">All caught up!</h2>
@@ -334,72 +268,164 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
                   Done
                 </button>
               </motion.div>
-            ) : (
-              <>
-                {/* Peek card — next listing, sits behind */}
-                {nextCard && (
-                  <CatchUpCard
-                    key={`peek-${nextCard.id}`}
-                    listing={nextCard}
-                    isTop={false}
-                    driveX={peekX}
-                    isSaved={isSaved(nextCard.id)}
-                    onToggleSave={() => {}}
-                    onTap={() => {}}
-                    withGestures={false}
-                  />
-                )}
+            )}
 
-                {/* Active top card */}
+            {/* Card stack */}
+            {newListings.length > 0 && !isDone && spacerCard && (
+              <div className="relative mx-4">
+
+                {/*
+                  ── Invisible spacer ──────────────────────────────────────────
+                  Always in flow, holds the container height steady so that all
+                  animated cards (which are absolute) never cause layout jumps.
+                */}
+                <div className="invisible pointer-events-none select-none" aria-hidden="true">
+                  <CardShell
+                    listing={spacerCard}
+                    isSaved={false}
+                    onToggleSave={() => {}}
+                    onClick={() => {}}
+                  />
+                </div>
+
+                {/*
+                  ── Peek card ─────────────────────────────────────────────────
+                  Stable key "peek" so it never remounts between swipes.
+                  Shown for every card except the last (remaining > 1).
+                  AnimatePresence fades it out gracefully on the last card.
+                */}
                 <AnimatePresence>
-                  {topCard && !exitingListing && (
-                    <CatchUpCard
-                      key={topCard.id}
-                      listing={topCard}
-                      isTop={true}
-                      driveX={topX}
-                      isSaved={isSaved(topCard.id)}
-                      onToggleSave={() => toggleSave(topCard.id)}
-                      onPanEnd={handlePanEnd}
-                      onTap={() => onOpenListing(topCard)}
-                    />
+                  {remaining > 1 && nextCard && (
+                    <motion.div
+                      key="peek"
+                      className="absolute inset-x-3 inset-y-0 z-0 pointer-events-none origin-top"
+                      initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                      animate={{ opacity: 0.85, scale: 0.95, y: 10 }}
+                      exit={{ opacity: 0, scale: 0.92, y: 14 }}
+                      transition={{ type: 'spring', stiffness: 280, damping: 26 }}
+                    >
+                      <CardShell
+                        listing={nextCard}
+                        isSaved={isSaved(nextCard.id)}
+                        onToggleSave={() => {}}
+                        onClick={() => {}}
+                      />
+                    </motion.div>
                   )}
                 </AnimatePresence>
 
-                {/* Exit overlay — flies off independently */}
+                {/*
+                  ── Top card ──────────────────────────────────────────────────
+                  Absolute, sits over the spacer. Starts from peek position
+                  (scale 0.95, y 10) and springs to full size — so new cards
+                  appear to "promote" up from behind, not flash in from nowhere.
+                */}
+                <AnimatePresence>
+                  {topCard && !exitingListing && (
+                    <motion.div
+                      key={topCard.id}
+                      className="absolute inset-0 z-10"
+                      style={{
+                        x: topX,
+                        rotate: dragRotate,
+                        touchAction: 'none',
+                        cursor: 'grab',
+                      }}
+                      initial={{ scale: 0.95, y: 10, opacity: 0.85 }}
+                      animate={{ scale: 1, y: 0, opacity: 1 }}
+                      transition={{ type: 'spring', stiffness: 300, damping: 28, mass: 0.8 }}
+                      onPanStart={() => { hasDragged.current = false }}
+                      onPan={(_, info) => {
+                        topX.set(info.offset.x)
+                        if (Math.abs(info.offset.x) > 4) hasDragged.current = true
+                      }}
+                      onPanEnd={handlePanEnd}
+                      onClick={() => { if (!hasDragged.current) onOpenListing(topCard) }}
+                    >
+                      <div className="relative rounded-3xl overflow-hidden shadow-xl h-full">
+                        <ListingCard
+                          listing={topCard}
+                          index={0}
+                          onClick={() => {}}
+                          isSaved={isSaved(topCard.id)}
+                          onToggleSave={() => { hapticLight(); toggleSave(topCard.id) }}
+                        />
+
+                        {/* LIKE stamp */}
+                        <motion.div
+                          className="absolute inset-0 flex items-start justify-start p-5 pointer-events-none"
+                          style={{ opacity: likeOpacity, background: 'rgba(34,197,94,0.07)' }}
+                        >
+                          <div className="border-[3px] border-green-500 px-4 py-1.5 rounded-xl -rotate-[20deg] mt-1">
+                            <span className="text-green-500 text-lg font-black tracking-widest uppercase">Like</span>
+                          </div>
+                        </motion.div>
+
+                        {/* NOPE stamp */}
+                        <motion.div
+                          className="absolute inset-0 flex items-start justify-end p-5 pointer-events-none"
+                          style={{ opacity: skipOpacity, background: 'rgba(0,0,0,0.04)' }}
+                        >
+                          <div className="border-[3px] border-foreground/50 px-4 py-1.5 rounded-xl rotate-[20deg] mt-1">
+                            <span className="text-foreground/50 text-lg font-black tracking-widest uppercase">Nope</span>
+                          </div>
+                        </motion.div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {/*
+                  ── Exit card ─────────────────────────────────────────────────
+                  Absolute overlay that flies off while the new top card
+                  promotes up from below. No enter animation — it starts
+                  exactly where the top card was (exitX = topX snapshot).
+                */}
                 {exitingListing && (
-                  <CatchUpCard
-                    key="__exit__"
-                    listing={exitingListing}
-                    isTop={true}
-                    driveX={exitX}
-                    isSaved={isSaved(exitingListing.id)}
-                    onToggleSave={() => {}}
-                    onTap={() => {}}
-                    withGestures={false}
-                    overrideZIndex={20}
-                  />
+                  <motion.div
+                    className="absolute inset-0 z-20 pointer-events-none"
+                    style={{ x: exitX, rotate: dragRotate }}
+                  >
+                    <div className="rounded-3xl overflow-hidden shadow-xl h-full">
+                      <ListingCard
+                        listing={exitingListing}
+                        index={0}
+                        onClick={() => {}}
+                        isSaved={isSaved(exitingListing.id)}
+                        onToggleSave={() => {}}
+                      />
+                    </div>
+                  </motion.div>
                 )}
-              </>
+
+              </div>
             )}
           </div>
 
-          {/* ── Footer ── */}
+          {/* ── Footer — mirrors listing detail layout ── */}
           {!isDone && newListings.length > 0 && (
-            <div className="flex gap-3 px-5 pb-10 pt-3 flex-shrink-0">
+            <div className="flex-shrink-0 px-5 pb-8 pt-4 flex gap-3">
               <button
-                onClick={() => commitSwipe('left')}
-                className="flex-1 h-14 bg-secondary rounded-2xl flex items-center justify-center gap-2 active:scale-[0.97] transition-transform"
+                onClick={handleShare}
+                className="w-14 h-14 bg-secondary rounded-2xl flex items-center justify-center active:scale-[0.98] transition-all flex-shrink-0"
               >
-                <SkipForward size={16} strokeWidth={2} className="text-foreground" />
-                <span className="text-[15px] font-semibold text-foreground">Skip</span>
+                <Share2 size={18} strokeWidth={1.8} className="text-foreground" />
               </button>
+
               <button
-                onClick={() => commitSwipe('right')}
-                className="flex-1 h-14 bg-foreground rounded-2xl flex items-center justify-center gap-2 active:scale-[0.97] transition-transform"
+                onClick={() => { hapticLight(); commitSwipe('left') }}
+                className="flex-1 h-14 bg-secondary text-foreground rounded-2xl text-[15px] font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
               >
-                <Heart size={16} strokeWidth={2} fill="currentColor" className="text-background" />
-                <span className="text-[15px] font-semibold text-background">Like</span>
+                <SkipForward size={16} strokeWidth={2} />
+                Skip
+              </button>
+
+              <button
+                onClick={() => { hapticLight(); commitSwipe('right') }}
+                className="flex-1 h-14 bg-foreground text-background rounded-2xl text-[15px] font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
+              >
+                <Heart size={16} strokeWidth={2} fill="currentColor" />
+                Like
               </button>
             </div>
           )}

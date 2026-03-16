@@ -36,18 +36,6 @@ function buildEmailHtml(name: string): string {
             </td>
           </tr>
 
-          <!-- Illustration -->
-          <tr>
-            <td align="center" style="padding:0 0 32px;">
-              <img
-                src="https://wzsdnhzsosonlcgubmxe.supabase.co/storage/v1/object/public/email-assets/welcome-illustration.svg"
-                alt="Two people celebrating"
-                width="185"
-                height="200"
-                style="display:block;width:185px;height:200px;"
-              />
-            </td>
-          </tr>
 
           <!-- Body text -->
           <tr>
