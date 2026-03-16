@@ -7,258 +7,166 @@ import {
   animate,
   AnimatePresence,
 } from 'framer-motion'
-import { X, Undo2, Bookmark, SkipForward, Home, Sparkles, Ruler } from 'lucide-react'
+import { X, Undo2, Bookmark, SkipForward, Sparkles } from 'lucide-react'
 import { Listing } from '../../data/listings'
 import { useListings } from '../../context/ListingsContext'
 import { useSaved } from '../../context/SavedContext'
-
-// ─── Source badge colours ────────────────────────────────────────────────────
-const SOURCE_COLORS: Record<string, string> = {
-  Pararius:        'bg-blue-500/90 text-white',
-  Kamernet:        'bg-red-500/90 text-white',
-  Huurwoningen:    'bg-emerald-500/90 text-white',
-  Funda:           'bg-orange-500/90 text-white',
-  HousingAnywhere: 'bg-purple-500/90 text-white',
-  DirectWonen:     'bg-cyan-500/90 text-white',
-  Rentola:         'bg-fuchsia-500/90 text-white',
-  'Kamer.nl':      'bg-amber-500/90 text-white',
-  Huurstunt:       'bg-teal-500/90 text-white',
-  '123Wonen':      'bg-indigo-500/90 text-white',
-}
+import ListingCard from './ListingCard'
 
 // ─── Swipe constants ─────────────────────────────────────────────────────────
 const SWIPE_THRESHOLD    = 80
 const VELOCITY_THRESHOLD = 400
 
 // ─── Spring presets ───────────────────────────────────────────────────────────
-// Exit throw — fast, decisive, no overshoot. velocity injected at call-time.
 const SPRING_EXIT    = { type: 'spring' as const, stiffness: 160, damping: 20, mass: 0.75 }
-// Snap-back when card is released below threshold — soft, natural bounce
 const SPRING_RETURN  = { type: 'spring' as const, stiffness: 320, damping: 26, mass: 0.9 }
-// Background cards repositioning after a commit — smooth, weighted
 const SPRING_ARC     = { type: 'spring' as const, stiffness: 210, damping: 22, mass: 1.1 }
-// New top card springing into place (y + scale only — x is driven by topX MotionValue)
 const SPRING_ENTER   = { type: 'spring' as const, stiffness: 380, damping: 30, mass: 0.85 }
-// Undo card flying back in
 const SPRING_UNDO    = { type: 'spring' as const, stiffness: 260, damping: 26, mass: 0.9 }
 
 // ─── Arc fan math ─────────────────────────────────────────────────────────────
-// Cards fan to the right along a circular arc.
-// ANGLE_STEP controls how spread-out each successive card is (radians).
-const ANGLE_STEP = (2 * Math.PI) / 9   // ≈ 40° per step
+const ANGLE_STEP = (2 * Math.PI) / 9
 
-// Returns the Framer Motion translate/scale/rotate for a card at `stackIndex`
-// positions behind the top card. `radius` is half the container width.
 function arcOffset(stackIndex: number, radius: number) {
   if (stackIndex === 0) return { x: 0, y: 0, scale: 1, rotate: 0 }
 
-  const angle     = -Math.PI / 2 + stackIndex * ANGLE_STEP
-  // Active card sits at angle -π/2; we compute dx/dy relative to that position
-  const activeX   = -radius * Math.cos(-Math.PI / 2)  // = 0
-  const activeY   =  radius * Math.sin(-Math.PI / 2)  // = -radius
-  const cardX     = -radius * Math.cos(angle)
-  const cardY     =  radius * Math.sin(angle)
+  const angle   = -Math.PI / 2 + stackIndex * ANGLE_STEP
+  const activeX = -radius * Math.cos(-Math.PI / 2)
+  const activeY =  radius * Math.sin(-Math.PI / 2)
+  const cardX   = -radius * Math.cos(angle)
+  const cardY   =  radius * Math.sin(angle)
 
-  // Negate dx so upcoming cards fan to the RIGHT
-  const dx        = -(cardX - activeX)
-  const dy        =  (cardY - activeY)
-  const scale     = Math.max(0.60, 1 - stackIndex * 0.13)
-  const rotate    = stackIndex * 4.5           // gentle tilt, stays readable
-
-  return { x: dx, y: dy, scale, rotate }
+  return {
+    x:      -(cardX - activeX),
+    y:        (cardY - activeY),
+    scale:  Math.max(0.60, 1 - stackIndex * 0.13),
+    rotate: stackIndex * 4.5,
+  }
 }
 
 /* ─── Card component ─────────────────────────────────────────────────────────
-   The card is NO LONGER inset-0. It floats in the container with generous
-   horizontal margins, giving it the lifted, premium Alma-app feel.
-
-   Top card: draggable left/right with skip/save overlays (unchanged UX).
-   Background cards: arc-fanned via Framer Motion animate.
+   Swipe wrapper around the shared ListingCard component.
+   driveX: MotionValue controlling horizontal position.
+     • Active top card  → topX (connected to pan gesture)
+     • Exit overlay     → exitX (animated independently, no gestures)
 */
 interface CardProps {
   listing: Listing
   isTop: boolean
   stackIndex: number
-  topX: MotionValue<number>
+  driveX: MotionValue<number>
   radius: number
-  onPanEnd: (e: PointerEvent, info: { offset: { x: number }; velocity: { x: number } }) => void
+  isSaved: boolean
+  onToggleSave: () => void
+  onPanEnd?: (e: PointerEvent, info: { offset: { x: number }; velocity: { x: number } }) => void
   onTap: () => void
+  withGestures?: boolean
+  overrideZIndex?: number
 }
 
-function CatchUpCard({ listing, isTop, stackIndex, topX, radius, onPanEnd, onTap }: CardProps) {
+function CatchUpCard({
+  listing,
+  isTop,
+  stackIndex,
+  driveX,
+  radius,
+  isSaved,
+  onToggleSave,
+  onPanEnd,
+  onTap,
+  withGestures = true,
+  overrideZIndex,
+}: CardProps) {
   const hasDragged = useRef(false)
 
-  // Top-card drag effects
-  const dragRotate  = useTransform(topX, [-200, 200], [-10, 10])
-  const saveOpacity = useTransform(topX, [0, SWIPE_THRESHOLD], [0, 1])
-  const skipOpacity = useTransform(topX, [-SWIPE_THRESHOLD, 0], [1, 0])
+  const dragRotate  = useTransform(driveX, [-200, 200], [-10, 10])
+  const saveOpacity = useTransform(driveX, [0, SWIPE_THRESHOLD], [0, 1])
+  const skipOpacity = useTransform(driveX, [-SWIPE_THRESHOLD, 0], [1, 0])
 
   const { x, y, scale, rotate } = arcOffset(stackIndex, radius)
 
   return (
     <motion.div
-      // ── Positioned card: floats with side padding, does NOT span edge-to-edge ──
       className="absolute"
       style={
         isTop
           ? {
-              x: topX,
+              x: driveX,
               rotate: dragRotate,
-              zIndex: 10,
-              touchAction: 'none',
+              zIndex: overrideZIndex ?? 10,
+              touchAction: withGestures ? 'none' : 'auto',
+              pointerEvents: withGestures ? 'auto' : 'none',
               willChange: 'transform',
-              width: '84%', left: '8%', top: '4%', bottom: '4%',
+              width: '84%', left: '8%', top: '6%',
             }
           : {
-              zIndex: 10 - stackIndex,
+              zIndex: overrideZIndex ?? (10 - stackIndex),
               willChange: 'transform',
-              width: '84%', left: '8%', top: '4%', bottom: '4%',
+              width: '84%', left: '8%', top: '6%',
             }
       }
       initial={false}
       animate={
-        isTop
-          ? { x: 0, y: 0, scale: 1, rotate: 0, opacity: 1 }
-          : { x, y, scale, rotate, opacity: stackIndex < 4 ? 1 : 0 }
+        !withGestures
+          // Exit overlay: x & rotate are driven entirely by MotionValues (exitX /
+          // dragRotate). If we include them in `animate`, Framer's declarative system
+          // calls exitX.set(0) on mount and cancels our animate(exitX, ±650) flight.
+          ? { y: 0, scale: 1, opacity: 1 }
+          : isTop
+            ? { x: 0, y: 0, scale: 1, rotate: 0, opacity: 1 }
+            : { x, y, scale, rotate, opacity: stackIndex < 4 ? 1 : 0 }
       }
       transition={
         isTop
-          ? {
-              // x and rotate are driven by MotionValues (topX / dragRotate) — instant
-              // y must also reset instantly to avoid axis-mismatch flicker
-              // Only scale springs: gives the "step forward" pop without any glitch
-              scale:   SPRING_ENTER,
-              default: { duration: 0 },
-            }
+          ? { scale: SPRING_ENTER, default: { duration: 0 } }
           : SPRING_ARC
       }
-      onPanStart={isTop ? () => { hasDragged.current = false } : undefined}
+      onPanStart={isTop && withGestures ? () => { hasDragged.current = false } : undefined}
       onPan={
-        isTop
+        isTop && withGestures
           ? (_, info) => {
-              topX.set(info.offset.x)
+              driveX.set(info.offset.x)
               if (Math.abs(info.offset.x) > 3) hasDragged.current = true
             }
           : undefined
       }
-      onPanEnd={isTop ? onPanEnd : undefined}
+      onPanEnd={isTop && withGestures ? onPanEnd : undefined}
     >
-      {/* ── The floating card shell ── */}
-      <div
-        className="w-full h-full bg-background flex flex-col overflow-hidden"
-        style={{
-          borderRadius: 32,
-          boxShadow: isTop
-            ? '0 24px 64px rgba(0,0,0,0.18), 0 4px 16px rgba(0,0,0,0.08)'
-            : '0 12px 40px rgba(0,0,0,0.12)',
-        }}
-        onClick={() => { if (isTop && !hasDragged.current) onTap() }}
-      >
+      {/* Clip container: rounds corners and keeps overlays within card bounds */}
+      <div className="relative rounded-3xl overflow-hidden shadow-lg">
+        <ListingCard
+          listing={listing}
+          index={0}
+          onClick={() => { if (!hasDragged.current && withGestures) onTap() }}
+          isSaved={isSaved}
+          onToggleSave={onToggleSave}
+        />
 
-        {/* ── Image section (fills top ~60%) ── */}
-        <div className="relative bg-secondary overflow-hidden" style={{ flex: '0 0 58%' }}>
-          {listing.image ? (
-            <img
-              src={listing.image}
-              alt={listing.title}
-              className="w-full h-full object-cover select-none"
-              draggable={false}
-              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <Home size={40} className="text-muted/40" strokeWidth={1} />
+        {/* ── SAVE overlay ── */}
+        {isTop && (
+          <motion.div
+            className="absolute inset-0 flex items-center justify-center pointer-events-none rounded-3xl"
+            style={{ opacity: saveOpacity, background: 'rgba(34,197,94,0.10)' }}
+          >
+            <div className="bg-green-500 text-white px-5 py-2.5 rounded-2xl flex items-center gap-2 -rotate-12 shadow-xl">
+              <Bookmark size={17} strokeWidth={2.5} />
+              <span className="text-sm font-bold tracking-widest uppercase">Saved</span>
             </div>
-          )}
+          </motion.div>
+        )}
 
-          {/* Gradient overlay so badge text is always legible */}
-          <div
-            className="absolute inset-0 pointer-events-none"
-            style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.30) 0%, transparent 50%)' }}
-          />
-
-          {/* Source + time badge — bottom-left of image */}
-          <div className="absolute bottom-3 left-3 flex items-center gap-2">
-            <span
-              className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wide backdrop-blur-sm ${
-                SOURCE_COLORS[listing.source] ?? 'bg-black/60 text-white'
-              }`}
-            >
-              {listing.source}
-            </span>
-            <span className="text-[11px] font-medium text-white/90 drop-shadow">
-              {listing.postedAt}
-            </span>
-          </div>
-
-          {/* New badge */}
-          {listing.isNew && (
-            <div className="absolute top-3 left-3">
-              <span className="bg-green-500 text-white text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wide shadow">
-                New
-              </span>
+        {/* ── SKIP overlay ── */}
+        {isTop && (
+          <motion.div
+            className="absolute inset-0 flex items-center justify-center pointer-events-none rounded-3xl"
+            style={{ opacity: skipOpacity, background: 'rgba(0,0,0,0.05)' }}
+          >
+            <div className="bg-foreground text-background px-5 py-2.5 rounded-2xl flex items-center gap-2 rotate-12 shadow-xl">
+              <SkipForward size={17} strokeWidth={2.5} />
+              <span className="text-sm font-bold tracking-widest uppercase">Skip</span>
             </div>
-          )}
-
-          {/* ── SAVE indicator overlay ── */}
-          {isTop && (
-            <motion.div
-              className="absolute inset-0 flex items-center justify-center pointer-events-none"
-              style={{ opacity: saveOpacity, background: 'rgba(34,197,94,0.12)' }}
-            >
-              <div className="bg-green-500 text-white px-5 py-2.5 rounded-2xl flex items-center gap-2 -rotate-12 shadow-xl">
-                <Bookmark size={17} strokeWidth={2.5} />
-                <span className="text-sm font-bold tracking-widest uppercase">Saved</span>
-              </div>
-            </motion.div>
-          )}
-
-          {/* ── SKIP indicator overlay ── */}
-          {isTop && (
-            <motion.div
-              className="absolute inset-0 flex items-center justify-center pointer-events-none"
-              style={{ opacity: skipOpacity, background: 'rgba(0,0,0,0.06)' }}
-            >
-              <div className="bg-foreground text-background px-5 py-2.5 rounded-2xl flex items-center gap-2 rotate-12 shadow-xl">
-                <SkipForward size={17} strokeWidth={2.5} />
-                <span className="text-sm font-bold tracking-widest uppercase">Skip</span>
-              </div>
-            </motion.div>
-          )}
-        </div>
-
-        {/* ── Details section (bottom ~42%) ── */}
-        <div className="flex flex-col justify-center px-5 py-4 flex-1 gap-1.5">
-          {/* Neighbourhood */}
-          <p className="text-[15px] font-semibold text-foreground leading-snug line-clamp-1">
-            {listing.neighborhood || listing.city}
-          </p>
-
-          {/* Price — most prominent */}
-          <p className="text-[26px] font-black text-foreground leading-none tracking-tight">
-            €{listing.price.toLocaleString()}
-            <span className="text-sm font-normal text-muted ml-1">/mo</span>
-          </p>
-
-          {/* Metadata row */}
-          <div className="flex items-center gap-2 text-muted text-xs mt-0.5 flex-wrap">
-            <span className="flex items-center gap-1">
-              <Home size={11} strokeWidth={1.8} />
-              {listing.type}
-            </span>
-            {listing.size > 0 && (
-              <>
-                <span className="w-1 h-1 rounded-full bg-border flex-shrink-0" />
-                <span className="flex items-center gap-1">
-                  <Ruler size={11} strokeWidth={1.8} />
-                  {listing.size}m²
-                </span>
-              </>
-            )}
-            <span className="w-1 h-1 rounded-full bg-border flex-shrink-0" />
-            <span className="capitalize">{listing.furnished}</span>
-          </div>
-        </div>
+          </motion.div>
+        )}
       </div>
     </motion.div>
   )
@@ -286,30 +194,30 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
     { index: number; action: 'save' | 'skip'; listingId: string }[]
   >([])
   const isAnimating = useRef(false)
-  const topX = useMotionValue(0)
 
-  // Measure container width → radius for arc calculation
+  const topX = useMotionValue(0)
+  const exitX = useMotionValue(0)
+  const [exitingListing, setExitingListing] = useState<Listing | null>(null)
+
   const containerRef = useRef<HTMLDivElement>(null)
   const [radius, setRadius] = useState(200)
 
   useEffect(() => {
     const measure = () => {
-      if (containerRef.current) {
-        // radius = half container width gives a natural, tight arc fan
-        setRadius(containerRef.current.offsetWidth * 0.52)
-      }
+      if (containerRef.current) setRadius(containerRef.current.offsetWidth * 0.52)
     }
     measure()
     window.addEventListener('resize', measure)
     return () => window.removeEventListener('resize', measure)
   }, [])
 
-  // Reset on open
   useEffect(() => {
     if (open) {
       setCurrentIndex(0)
       setHistory([])
+      setExitingListing(null)
       topX.set(0)
+      exitX.set(0)
       isAnimating.current = false
     }
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -318,7 +226,6 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
   const remaining = Math.max(newListings.length - currentIndex, 0)
   const visibleCards = newListings.slice(currentIndex, currentIndex + 4)
 
-  // throwVelocity: actual px/s from the drag gesture — makes fast flicks exit faster
   const commitSwipe = useCallback(
     (direction: 'left' | 'right', throwVelocity = 0) => {
       if (isAnimating.current || isDone) return
@@ -330,23 +237,31 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
       if (direction === 'right' && !isSaved(listing.id)) toggleSave(listing.id)
 
       const dir = direction === 'right' ? 1 : -1
-      animate(topX, dir * 600, {
+
+      // Hand current position to exitX, then reset topX immediately (no flicker)
+      exitX.set(topX.get())
+      setExitingListing(listing)
+      topX.set(0)
+
+      setHistory((prev) => [
+        ...prev,
+        { index: currentIndex, action: direction === 'right' ? 'save' : 'skip', listingId: listing.id },
+      ])
+      setCurrentIndex((prev) => prev + 1)
+
+      // Release lock so new top card is interactive immediately
+      isAnimating.current = false
+
+      animate(exitX, dir * 650, {
         ...SPRING_EXIT,
-        // Inject the finger's throw velocity so fast flicks feel instant,
-        // slow threshold-crossings feel deliberate
         velocity: throwVelocity * dir,
         onComplete: () => {
-          setHistory((prev) => [
-            ...prev,
-            { index: currentIndex, action: direction === 'right' ? 'save' : 'skip', listingId: listing.id },
-          ])
-          setCurrentIndex((prev) => prev + 1)
-          topX.set(0)
-          isAnimating.current = false
+          setExitingListing(null)
+          exitX.set(0)
         },
       })
     },
-    [currentIndex, isDone, newListings, isSaved, toggleSave, topX],
+    [currentIndex, isDone, newListings, isSaved, toggleSave, topX, exitX],
   )
 
   const handlePanEnd = useCallback(
@@ -356,10 +271,8 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
         Math.abs(info.offset.x) > SWIPE_THRESHOLD ||
         Math.abs(info.velocity.x) > VELOCITY_THRESHOLD
       if (shouldSwipe) {
-        // Pass the actual drag velocity so the spring can honour the throw
         commitSwipe(info.offset.x > 0 ? 'right' : 'left', info.velocity.x)
       } else {
-        // Released without intent to swipe — spring back gently
         animate(topX, 0, SPRING_RETURN)
       }
     },
@@ -467,22 +380,43 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
                 </button>
               </motion.div>
             ) : (
-              // Render back→front so the top card is always painted last (on top)
-              [...visibleCards].reverse().map((listing, reversedI) => {
-                const stackIndex = visibleCards.length - 1 - reversedI
-                return (
+              <>
+                {/* Render back→front so the top card paints last (highest) */}
+                {[...visibleCards].reverse().map((listing, reversedI) => {
+                  const stackIndex = visibleCards.length - 1 - reversedI
+                  return (
+                    <CatchUpCard
+                      key={listing.id}
+                      listing={listing}
+                      isTop={stackIndex === 0}
+                      stackIndex={stackIndex}
+                      driveX={topX}
+                      radius={radius}
+                      isSaved={isSaved(listing.id)}
+                      onToggleSave={() => toggleSave(listing.id)}
+                      onPanEnd={handlePanEnd}
+                      onTap={() => onOpenListing(listing)}
+                    />
+                  )
+                })}
+
+                {/* Exit overlay — flies off independently, no gestures, no pointer capture */}
+                {exitingListing && (
                   <CatchUpCard
-                    key={listing.id}
-                    listing={listing}
-                    isTop={stackIndex === 0}
-                    stackIndex={stackIndex}
-                    topX={topX}
+                    key="__exit__"
+                    listing={exitingListing}
+                    isTop={true}
+                    stackIndex={0}
+                    driveX={exitX}
                     radius={radius}
-                    onPanEnd={handlePanEnd}
-                    onTap={() => onOpenListing(listing)}
+                    isSaved={isSaved(exitingListing.id)}
+                    onToggleSave={() => {}}
+                    onTap={() => {}}
+                    withGestures={false}
+                    overrideZIndex={20}
                   />
-                )
-              })
+                )}
+              </>
             )}
           </div>
 
