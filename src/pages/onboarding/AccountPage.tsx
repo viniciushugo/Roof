@@ -42,7 +42,10 @@ export default function AccountPage() {
 
   const handleGoogle = async () => {
     setGoogleLoading(true)
-    await signInWithGoogle()
+    setError(null)
+    const { error } = await signInWithGoogle()
+    setGoogleLoading(false)
+    if (error) setError(error)
   }
 
   return (

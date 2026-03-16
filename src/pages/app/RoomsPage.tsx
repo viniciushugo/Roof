@@ -108,7 +108,7 @@ export default function RoomsPage() {
   return (
     <div className="flex flex-col h-full bg-background">
       {/* Header */}
-      <div className="flex-shrink-0 px-5 pt-14 pb-3 bg-background">
+      <div className="flex-shrink-0 px-5 pt-header pb-3 bg-background">
         <div className="flex items-center justify-between mb-4">
           <div>
             <button

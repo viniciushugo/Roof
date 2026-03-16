@@ -58,7 +58,7 @@ export default function AlertsPage() {
   return (
     <div className="flex flex-col h-full bg-background relative">
       {/* Header — left-aligned, consistent */}
-      <div className="flex-shrink-0 px-5 pt-14 pb-3">
+      <div className="flex-shrink-0 px-5 pt-header pb-3">
         <div className="flex items-center justify-between mb-1">
           <h1 className="text-2xl font-bold text-foreground">Alerts</h1>
           <button

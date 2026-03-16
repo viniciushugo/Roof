@@ -51,7 +51,7 @@ export default function WelcomePage() {
       transition={{ duration: 0.35 }}
     >
       {/* Top: logo + tagline */}
-      <div className="px-5 pt-14 pb-6">
+      <div className="px-5 pt-header pb-6">
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}

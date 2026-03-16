@@ -55,7 +55,7 @@ export default function LocationPage() {
         <div className="space-y-4">
           <div>
             <select
-              className="w-full h-14 px-4 rounded-xl border border-border text-foreground text-[15px] bg-background appearance-none focus:border-foreground transition-colors"
+              className="w-full h-14 px-4 rounded-xl border border-border text-foreground text-[15px] bg-secondary appearance-none focus:border-foreground transition-colors"
               value={country}
               onChange={(e) => setCountry(e.target.value)}
             >
@@ -81,7 +81,7 @@ export default function LocationPage() {
                 {suggestions.map((c) => (
                   <button
                     key={c}
-                    className="w-full text-left px-4 py-3 text-[15px] hover:bg-secondary active:bg-secondary transition-colors"
+                    className="w-full text-left px-4 py-3 text-[15px] text-foreground hover:bg-secondary active:bg-secondary transition-colors"
                     onMouseDown={() => addCity(c)}
                   >
                     📍 {c}

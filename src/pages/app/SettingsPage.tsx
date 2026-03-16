@@ -16,7 +16,7 @@ export default function SettingsPage() {
   return (
     <div className="flex flex-col h-full bg-background">
       {/* Header — left-aligned, no back button (tab bar page) */}
-      <div className="flex-shrink-0 px-5 pt-14 pb-4 border-b border-border">
+      <div className="flex-shrink-0 px-5 pt-header pb-4 border-b border-border">
         <h1 className="text-2xl font-bold text-foreground">Settings</h1>
       </div>
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, ExternalLink, Copy, Check, Home, Ruler, Sparkles, Calendar, Share2 } from 'lucide-react'
+import { X, ExternalLink, Copy, Check, Home, Ruler, Sparkles, Calendar, Share2, ArrowLeft } from 'lucide-react'
 import { hapticLight } from '../../lib/haptics'
 import { track } from '../../lib/analytics'
 import { Listing } from '../../data/listings'
@@ -29,12 +29,8 @@ function formatDate(dateStr: string): string | null {
   try {
     const d = new Date(dateStr)
     if (isNaN(d.getTime())) return null
-    return d.toLocaleDateString('en-GB', {
-      day: 'numeric', month: 'long', year: 'numeric',
-    })
-  } catch {
-    return null
-  }
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+  } catch { return null }
 }
 
 interface Props {
@@ -46,10 +42,13 @@ interface Props {
 export default function ListingModal({ listing, onClose, onViewed }: Props) {
   const [copied, setCopied] = useState(false)
   const [introText, setIntroText] = useState('')
+  const [editingIntro, setEditingIntro] = useState(false)
+  const [draftText, setDraftText] = useState('')
 
   useEffect(() => {
     if (listing) {
-      setIntroText(generateIntro(listing))
+      const intro = generateIntro(listing)
+      setIntroText(intro)
       onViewed?.(listing.id)
       track('listing_viewed', {
         listing_id: listing.id,
@@ -59,6 +58,16 @@ export default function ListingModal({ listing, onClose, onViewed }: Props) {
       })
     }
   }, [listing?.id, onViewed])
+
+  const openEditor = () => {
+    setDraftText(introText)
+    setEditingIntro(true)
+  }
+
+  const saveEditor = () => {
+    setIntroText(draftText)
+    setEditingIntro(false)
+  }
 
   const copyIntro = async () => {
     try {
@@ -90,14 +99,15 @@ export default function ListingModal({ listing, onClose, onViewed }: Props) {
 
           {/* Sheet */}
           <motion.div
-            className="absolute bottom-0 left-0 right-0 bg-background rounded-t-[28px] z-50 max-h-[92%] flex flex-col overflow-hidden"
+            className="absolute bottom-0 left-0 right-0 bg-background rounded-t-[28px] z-50 flex flex-col"
+            style={{ height: '92%' }}
             initial={{ y: '100%' }}
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
             transition={{ type: 'spring', damping: 32, stiffness: 300 }}
           >
-            {/* Hero image gallery */}
-            <div className="relative flex-shrink-0 overflow-hidden rounded-t-[28px] bg-secondary">
+            {/* Hero image — fixed height prevents scroll-behind */}
+            <div className="relative flex-shrink-0 rounded-t-[28px] overflow-hidden bg-secondary" style={{ height: '42%' }}>
               <ImageGallery images={listing.images} alt={listing.title} />
               <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/55 to-transparent pointer-events-none" />
               <div className="absolute top-3 inset-x-0 flex justify-center pointer-events-none">
@@ -117,8 +127,8 @@ export default function ListingModal({ listing, onClose, onViewed }: Props) {
               </div>
             </div>
 
-            {/* Scrollable details */}
-            <div className="flex-1 overflow-y-auto scrollbar-hide">
+            {/* Scrollable details — isolated scroll context, cannot bleed over image */}
+            <div className="flex-1 overflow-y-auto scrollbar-hide overscroll-contain">
               <div className="px-5 pt-5 pb-4">
                 <div className="mb-4">
                   <p className="text-[22px] font-bold text-foreground leading-tight">{listing.neighborhood}</p>
@@ -156,24 +166,21 @@ export default function ListingModal({ listing, onClose, onViewed }: Props) {
 
             {/* Pinned intro + actions */}
             <div className="flex-shrink-0 border-t border-border bg-background">
-              {/* Editable intro */}
               <div className="px-5 pt-4 pb-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-5 h-5 bg-foreground rounded-md flex items-center justify-center flex-shrink-0">
-                    <Sparkles size={11} className="text-background" />
+                <button onClick={openEditor} className="w-full text-left active:opacity-75 transition-opacity">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-5 h-5 bg-foreground rounded-md flex items-center justify-center flex-shrink-0">
+                      <Sparkles size={11} className="text-background" />
+                    </div>
+                    <p className="text-[13px] font-semibold text-foreground">Intro message</p>
+                    <p className="text-[11px] text-muted ml-auto">Tap to edit →</p>
                   </div>
-                  <p className="text-[13px] font-semibold text-foreground">Intro message</p>
-                  <p className="text-[11px] text-muted ml-auto">Tap to edit</p>
-                </div>
-                <textarea
-                  value={introText}
-                  onChange={(e) => setIntroText(e.target.value)}
-                  rows={5}
-                  className="w-full text-[15px] text-foreground leading-relaxed resize-none bg-secondary rounded-2xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-foreground/15"
-                />
+                  <p className="text-[14px] text-foreground leading-relaxed line-clamp-2 bg-secondary rounded-xl px-4 py-3">
+                    {introText}
+                  </p>
+                </button>
               </div>
 
-              {/* Action buttons */}
               <div className="px-5 pb-8 flex gap-3">
                 {(typeof navigator !== 'undefined' && (navigator.share || navigator.clipboard)) && (
                   <button
@@ -181,15 +188,9 @@ export default function ListingModal({ listing, onClose, onViewed }: Props) {
                       hapticLight()
                       track('listing_shared', { listing_id: listing.id, source: listing.source })
                       try {
-                        await navigator.share({
-                          title: listing.title,
-                          text: `€${listing.price}/mo in ${listing.neighborhood || listing.city}`,
-                          url: listing.url,
-                        })
+                        await navigator.share({ title: listing.title, text: `€${listing.price}/mo in ${listing.neighborhood || listing.city}`, url: listing.url })
                       } catch {
-                        try {
-                          await navigator.clipboard.writeText(listing.url)
-                        } catch {}
+                        try { await navigator.clipboard.writeText(listing.url) } catch {}
                       }
                     }}
                     className="w-14 h-14 bg-secondary rounded-2xl flex items-center justify-center active:scale-[0.98] transition-all flex-shrink-0"
@@ -199,24 +200,60 @@ export default function ListingModal({ listing, onClose, onViewed }: Props) {
                 )}
                 <button
                   onClick={copyIntro}
-                  className={`flex-1 h-14 rounded-2xl text-[15px] font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-all ${
-                    copied ? 'bg-green-500 text-white' : 'bg-secondary text-foreground'
-                  }`}
+                  className={`flex-1 h-14 rounded-2xl text-[15px] font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-all ${copied ? 'bg-green-500 text-white' : 'bg-secondary text-foreground'}`}
                 >
                   {copied ? <><Check size={16} strokeWidth={2.5} />Copied!</> : <><Copy size={15} />Copy intro</>}
                 </button>
-
                 <a
                   href={listing.url}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex-1 h-14 bg-foreground text-background rounded-2xl text-[15px] font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
                 >
-                  Go to listing
-                  <ExternalLink size={15} />
+                  Go to listing <ExternalLink size={15} />
                 </a>
               </div>
             </div>
+
+            {/* Full-page intro editor — slides in from the right */}
+            <AnimatePresence>
+              {editingIntro && (
+                <motion.div
+                  className="absolute inset-0 bg-background rounded-t-[28px] z-10 flex flex-col"
+                  initial={{ x: '100%' }}
+                  animate={{ x: 0 }}
+                  exit={{ x: '100%' }}
+                  transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+                >
+                  <div className="flex items-center gap-3 px-5 pt-5 pb-4 border-b border-border flex-shrink-0">
+                    <button
+                      onClick={() => setEditingIntro(false)}
+                      className="w-9 h-9 bg-secondary rounded-full flex items-center justify-center active:opacity-60 text-foreground"
+                    >
+                      <ArrowLeft size={16} strokeWidth={2} />
+                    </button>
+                    <div className="flex-1">
+                      <p className="text-[15px] font-semibold text-foreground">Edit intro message</p>
+                      <p className="text-xs text-muted">Personalise before sending</p>
+                    </div>
+                    <button
+                      onClick={saveEditor}
+                      className="px-5 h-9 bg-foreground text-background rounded-full text-sm font-semibold active:opacity-80"
+                    >
+                      Save
+                    </button>
+                  </div>
+                  <div className="flex-1 px-5 pt-4 pb-8">
+                    <textarea
+                      value={draftText}
+                      onChange={(e) => setDraftText(e.target.value)}
+                      autoFocus
+                      className="w-full h-full text-[15px] text-foreground leading-relaxed resize-none bg-secondary rounded-2xl px-4 py-4 focus:outline-none focus:ring-2 focus:ring-foreground/15"
+                    />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </motion.div>
         </>
       )}

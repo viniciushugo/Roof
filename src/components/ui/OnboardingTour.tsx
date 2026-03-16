@@ -1,41 +1,31 @@
-import { memo, useState, useEffect, useCallback, useRef } from 'react'
+import { memo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { Search, Heart, Bell, Layers } from 'lucide-react'
 
-interface TourStep {
-  title: string
-  description: string
-  selector: string
-  position: 'top' | 'bottom'
-}
-
-const STEPS: TourStep[] = [
+const SLIDES = [
   {
+    icon: Search,
+    color: 'bg-blue-500',
     title: 'Search & Filter',
-    description:
-      'Find your perfect place by searching neighborhoods or filtering by price, size, and more.',
-    selector: '[data-tour="search"]',
-    position: 'bottom',
+    description: 'Find your perfect place by searching neighbourhoods or filtering by price, size, furnished status and more.',
   },
   {
-    title: 'Save Listings',
-    description:
-      'Tap the heart to save listings you like. Access them anytime from the Saved tab.',
-    selector: '[data-tour="save"]',
-    position: 'bottom',
+    icon: Heart,
+    color: 'bg-rose-500',
+    title: 'Like Listings',
+    description: 'Tap the heart to like listings. Access them anytime from the Liked tab so you never lose track.',
   },
   {
+    icon: Bell,
+    color: 'bg-amber-500',
     title: 'Set Alerts',
-    description:
-      'Create alerts to get notified when new listings match your criteria.',
-    selector: '[data-tour="alerts"]',
-    position: 'top',
+    description: 'Create alerts and get a push notification the moment a new listing matches your criteria.',
   },
   {
+    icon: Layers,
+    color: 'bg-violet-500',
     title: 'Catch Up',
-    description:
-      'Swipe through new listings Tinder-style to quickly review what\'s new.',
-    selector: '[data-tour="catchup"]',
-    position: 'bottom',
+    description: 'Swipe through new listings to quickly review what\'s fresh today — like or skip in one gesture.',
   },
 ]
 
@@ -44,127 +34,102 @@ interface Props {
   onSkip: () => void
 }
 
-const PADDING = 8
-
-function getRect(selector: string): DOMRect | null {
-  const el = document.querySelector(selector)
-  return el ? el.getBoundingClientRect() : null
-}
-
 const OnboardingTour = memo(function OnboardingTour({ onComplete, onSkip }: Props) {
-  const [step, setStep] = useState(0)
-  const [rect, setRect] = useState<DOMRect | null>(null)
-  const rafRef = useRef(0)
+  const [index, setIndex] = useState(0)
+  const [direction, setDirection] = useState(1)
+  const isLast = index === SLIDES.length - 1
+  const slide = SLIDES[index]
 
-  const current = STEPS[step]
-
-  const measureRect = useCallback(() => {
-    setRect(getRect(STEPS[step].selector))
-  }, [step])
-
-  useEffect(() => {
-    // Small delay so DOM has time to paint
-    const id = requestAnimationFrame(() => {
-      measureRect()
-    })
-    rafRef.current = id
-    window.addEventListener('resize', measureRect)
-    return () => {
-      cancelAnimationFrame(rafRef.current)
-      window.removeEventListener('resize', measureRect)
-    }
-  }, [measureRect])
-
-  const next = () => {
-    if (step < STEPS.length - 1) setStep(step + 1)
-    else onComplete()
+  const go = (next: number) => {
+    setDirection(next > index ? 1 : -1)
+    setIndex(next)
   }
 
-  // Spotlight cutout dimensions
-  const sx = rect ? rect.x - PADDING : 0
-  const sy = rect ? rect.y - PADDING : 0
-  const sw = rect ? rect.width + PADDING * 2 : 0
-  const sh = rect ? rect.height + PADDING * 2 : 0
+  const handleNext = () => {
+    if (isLast) { onComplete(); return }
+    go(index + 1)
+  }
 
-  // Tooltip placement
-  const tooltipStyle: React.CSSProperties = {}
-  if (rect) {
-    tooltipStyle.left = Math.max(16, Math.min(rect.x, window.innerWidth - 310))
-    if (current.position === 'bottom') {
-      tooltipStyle.top = rect.bottom + PADDING + 12
-    } else {
-      tooltipStyle.bottom = window.innerHeight - rect.top + PADDING + 12
-    }
+  const variants = {
+    enter: (d: number) => ({ x: d * 60, opacity: 0 }),
+    center: { x: 0, opacity: 1 },
+    exit: (d: number) => ({ x: d * -60, opacity: 0 }),
   }
 
   return (
-    <div className="fixed inset-0 z-[9999]">
-      {/* Backdrop with spotlight cutout */}
-      <svg className="absolute inset-0 w-full h-full" style={{ pointerEvents: 'none' }}>
-        <defs>
-          <mask id="spotlight-mask">
-            <rect x="0" y="0" width="100%" height="100%" fill="white" />
-            {rect && (
-              <rect
-                x={sx}
-                y={sy}
-                width={sw}
-                height={sh}
-                rx={14}
-                ry={14}
-                fill="black"
-              />
-            )}
-          </mask>
-        </defs>
-        <rect
-          x="0"
-          y="0"
-          width="100%"
-          height="100%"
-          fill="rgba(0,0,0,0.6)"
-          mask="url(#spotlight-mask)"
-          style={{ pointerEvents: 'auto' }}
-          onClick={next}
-        />
-      </svg>
+    <>
+      {/* Backdrop */}
+      <div className="fixed inset-0 bg-black/50 z-[9998]" onClick={onSkip} />
 
-      {/* Tooltip */}
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={step}
-          initial={{ opacity: 0, y: current.position === 'bottom' ? -6 : 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: current.position === 'bottom' ? -6 : 6 }}
-          transition={{ duration: 0.22, ease: 'easeOut' }}
-          className="absolute w-[290px] bg-background rounded-2xl shadow-lg p-5 z-[10000]"
-          style={tooltipStyle}
-        >
-          <p className="text-[15px] font-semibold text-foreground mb-1">{current.title}</p>
-          <p className="text-sm text-muted leading-relaxed mb-4">{current.description}</p>
+      {/* Bottom sheet */}
+      <motion.div
+        className="fixed bottom-0 left-0 right-0 bg-background rounded-t-[32px] z-[9999] pb-safe-bottom"
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+      >
+        {/* Handle */}
+        <div className="flex justify-center pt-3 pb-2">
+          <div className="w-10 h-1 rounded-full bg-border" />
+        </div>
 
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-muted font-medium">
-              {step + 1}/{STEPS.length}
-            </span>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={onSkip}
-                className="px-4 h-8 rounded-full text-sm font-medium text-muted active:opacity-60 transition-opacity"
-              >
-                Skip
-              </button>
-              <button
-                onClick={next}
-                className="px-4 h-8 bg-foreground text-background rounded-full text-sm font-medium active:opacity-80 transition-opacity"
-              >
-                {step < STEPS.length - 1 ? 'Next' : 'Done'}
-              </button>
-            </div>
-          </div>
-        </motion.div>
-      </AnimatePresence>
-    </div>
+        {/* Slide content */}
+        <div className="relative overflow-hidden" style={{ height: 260 }}>
+          <AnimatePresence initial={false} custom={direction} mode="popLayout">
+            <motion.div
+              key={index}
+              custom={direction}
+              variants={variants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ type: 'spring', stiffness: 380, damping: 32, mass: 0.85 }}
+              className="absolute inset-0 flex flex-col items-center justify-center px-8 text-center"
+            >
+              {/* Icon bubble */}
+              <div className={`w-20 h-20 ${slide.color} rounded-3xl flex items-center justify-center mb-6 shadow-lg`}>
+                <slide.icon size={36} strokeWidth={1.5} className="text-white" />
+              </div>
+
+              <h2 className="text-xl font-bold text-foreground mb-3 leading-tight">
+                {slide.title}
+              </h2>
+              <p className="text-[15px] text-muted leading-relaxed">
+                {slide.description}
+              </p>
+            </motion.div>
+          </AnimatePresence>
+        </div>
+
+        {/* Dots */}
+        <div className="flex items-center justify-center gap-2 mb-6">
+          {SLIDES.map((_, i) => (
+            <button
+              key={i}
+              onClick={() => go(i)}
+              className={`rounded-full transition-all duration-300 ${i === index ? 'w-6 h-2 bg-foreground' : 'w-2 h-2 bg-border'}`}
+            />
+          ))}
+        </div>
+
+        {/* Buttons */}
+        <div className="px-5 pb-8 flex gap-3">
+          <button
+            onClick={onSkip}
+            className="flex-1 h-13 px-4 py-3.5 rounded-2xl bg-secondary text-foreground text-[15px] font-medium active:opacity-70 transition-opacity"
+          >
+            Skip
+          </button>
+          <button
+            onClick={handleNext}
+            className="flex-1 h-13 px-4 py-3.5 rounded-2xl bg-foreground text-background text-[15px] font-semibold active:opacity-80 transition-opacity"
+          >
+            {isLast ? 'Get started' : 'Next'}
+          </button>
+        </div>
+      </motion.div>
+    </>
   )
 })
 

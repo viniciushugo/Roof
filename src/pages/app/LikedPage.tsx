@@ -11,7 +11,7 @@ import ListingCard from '../../components/ui/ListingCard'
 import ListingModal from '../../components/ui/ListingModal'
 import SourceBadge from '../../components/ui/SourceBadge'
 
-const TABS = ['Saved', 'Viewed'] as const
+const TABS = ['Liked', 'Viewed'] as const
 type Tab = typeof TABS[number]
 
 export default function LikedPage() {
@@ -20,9 +20,9 @@ export default function LikedPage() {
   const { listings } = useListings()
   const { isViewed, markViewed, viewedIds } = useViewed()
   const [activeListing, setActiveListing] = useState<Listing | null>(null)
-  const [tab, setTab] = useState<Tab>('Saved')
+  const [tab, setTab] = useState<Tab>('Liked')
 
-  const saved = useMemo(() => listings.filter((l) => savedIds.has(l.id)), [listings, savedIds])
+  const liked = useMemo(() => listings.filter((l) => savedIds.has(l.id)), [listings, savedIds])
   const viewed = useMemo(() => listings.filter((l) => viewedIds.has(l.id)), [listings, viewedIds])
 
   const feedRef = useRef<HTMLDivElement>(null)
@@ -33,18 +33,18 @@ export default function LikedPage() {
     [listings, savedIds],
   )
 
-  const activeList = tab === 'Saved' ? saved : viewed
-  const count = (t: Tab) => t === 'Saved' ? saved.length : viewed.length
+  const activeList = tab === 'Liked' ? liked : viewed
+  const count = (t: Tab) => t === 'Liked' ? liked.length : viewed.length
 
   return (
     <div className="flex flex-col h-full bg-background">
       {/* Header — left-aligned, consistent with other tab pages */}
-      <div className="flex-shrink-0 px-5 pt-14 pb-3">
-        <h1 className="text-2xl font-bold text-foreground">Saved</h1>
+      <div className="flex-shrink-0 px-5 pt-header pb-3">
+        <h1 className="text-2xl font-bold text-foreground">Liked</h1>
         <p className="text-sm text-muted mt-1">
-          {saved.length > 0
-            ? `${saved.length} listing${saved.length !== 1 ? 's' : ''} saved`
-            : 'Listings you save will appear here'}
+          {liked.length > 0
+            ? `${liked.length} listing${liked.length !== 1 ? 's' : ''} liked`
+            : 'Listings you like will appear here'}
         </p>
 
         {/* Pill chip tabs — same style as Roof page platform filters */}
@@ -74,11 +74,11 @@ export default function LikedPage() {
             </div>
             <div>
               <h3 className="text-xl font-bold text-foreground mb-1">
-                {tab === 'Saved' ? 'No favourites yet' : 'No viewed listings'}
+                {tab === 'Liked' ? 'No likes yet' : 'No viewed listings'}
               </h3>
               <p className="text-sm text-muted leading-relaxed">
-                {tab === 'Saved'
-                  ? 'Save your favourite listings and find them here later'
+                {tab === 'Liked'
+                  ? 'Like your favourite listings and find them here later'
                   : 'Listings you open will appear here'}
               </p>
             </div>
@@ -91,7 +91,7 @@ export default function LikedPage() {
           </div>
 
           {/* You may like section */}
-          {tab === 'Saved' && suggestions.length > 0 && (
+          {tab === 'Liked' && suggestions.length > 0 && (
             <div className="px-5 pb-8">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-[17px] font-bold text-foreground">You may like</h2>

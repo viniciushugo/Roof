@@ -31,7 +31,7 @@ export default function NotificationSettingsPage() {
   return (
     <div className="flex flex-col h-full bg-background">
       {/* Header */}
-      <div className="flex-shrink-0 px-5 pt-14 pb-4 border-b border-border flex items-center gap-3">
+      <div className="flex-shrink-0 px-5 pt-header pb-4 border-b border-border flex items-center gap-3">
         <button onClick={() => navigate(-1)} className="active:opacity-60">
           <ChevronLeft size={22} strokeWidth={2} className="text-foreground" />
         </button>

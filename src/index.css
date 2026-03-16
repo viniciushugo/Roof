@@ -67,6 +67,11 @@
     padding-top: env(safe-area-inset-top);
   }
 
+  /* Page header top padding = 16px base + safe-area-inset-top (covers status bar + Dynamic Island) */
+  .pt-header {
+    padding-top: calc(16px + env(safe-area-inset-top));
+  }
+
   .pb-safe-bottom {
     padding-bottom: env(safe-area-inset-bottom);
   }

@@ -17,7 +17,7 @@ import LocationPage from './pages/onboarding/LocationPage'
 import BudgetPage from './pages/onboarding/BudgetPage'
 import NotificationsPage from './pages/onboarding/NotificationsPage'
 import CommunityPage from './pages/onboarding/CommunityPage'
-import AccountPage from './pages/onboarding/AccountPage'
+import OnboardingAccountPage from './pages/onboarding/AccountPage'
 import FilterDetailsPage from './pages/onboarding/FilterDetailsPage'
 import LoginPage from './pages/LoginPage'
 import RoomsPage from './pages/app/RoomsPage'
@@ -25,6 +25,7 @@ import LikedPage from './pages/app/LikedPage'
 import AlertsPage from './pages/app/ChatsPage'
 import ProfilePage from './pages/app/ProfilePage'
 import SettingsPage from './pages/app/SettingsPage'
+import AccountPage from './pages/app/AccountPage'
 import PreferencesPage from './pages/app/PreferencesPage'
 import NotificationSettingsPage from './pages/app/NotificationSettingsPage'
 import PrivacyPolicyPage from './pages/app/PrivacyPolicyPage'
@@ -61,13 +62,14 @@ export default function App() {
                   <Route path="/onboarding/budget" element={<BudgetPage />} />
                   <Route path="/onboarding/filter-details" element={<FilterDetailsPage />} />
                   <Route path="/onboarding/notifications" element={<NotificationsPage />} />
-                  <Route path="/onboarding/account" element={<AccountPage />} />
+                  <Route path="/onboarding/account" element={<OnboardingAccountPage />} />
                   <Route path="/onboarding/community" element={<CommunityPage />} />
 
                   {/* Main app */}
                   <Route path="/app/rooms" element={<RoomsPage />} />
                   <Route path="/app/liked" element={<LikedPage />} />
                   <Route path="/app/alerts" element={<AlertsPage />} />
+                  <Route path="/app/account" element={<AccountPage />} />
                   <Route path="/app/profile" element={<ProfilePage />} />
                   <Route path="/app/settings" element={<SettingsPage />} />
                   <Route path="/app/preferences" element={<PreferencesPage />} />

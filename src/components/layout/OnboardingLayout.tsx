@@ -31,7 +31,7 @@ export default function OnboardingLayout({
   return (
     <div className="flex flex-col h-full bg-background">
       {/* Progress bar + back */}
-      <div className="px-5 pt-14 pb-4 flex-shrink-0">
+      <div className="px-5 pt-header pb-4 flex-shrink-0">
         <div className="flex items-center gap-3 mb-5">
           {showBack && (
             <button
