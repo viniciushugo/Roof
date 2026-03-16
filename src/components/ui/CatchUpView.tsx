@@ -12,6 +12,7 @@ import { Listing } from '../../data/listings'
 import { useListings } from '../../context/ListingsContext'
 import { useSaved } from '../../context/SavedContext'
 
+// ─── Source badge colours ───────────────────────────────────────────────────
 const SOURCE_COLORS: Record<string, string> = {
   Pararius: 'bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300',
   Kamernet: 'bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300',
@@ -25,57 +26,85 @@ const SOURCE_COLORS: Record<string, string> = {
   '123Wonen': 'bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300',
 }
 
+// ─── Constants ──────────────────────────────────────────────────────────────
 const SWIPE_THRESHOLD = 80
 const VELOCITY_THRESHOLD = 400
 
-/* ─── Swipeable Card ─── */
+// Circular arc: divides 2π into 8 segments → 45° per step
+// Gives a generous spread so background cards peek visibly from the sides
+const ANGLE_STEP = (2 * Math.PI) / 8
 
+// ─── Arc position helpers ────────────────────────────────────────────────────
+// Compute the arc offset (translate x/y, scale, rotate) for a card
+// at `stackIndex` positions behind the top card. stackIndex 0 = top card.
+// The arc starts at -π/2 (12 o'clock) and upcoming cards fan out to the right.
+// We negate the x so cards spread to the right (towards the queue).
+function arcPosition(stackIndex: number, radius: number) {
+  const angle = -Math.PI / 2 + stackIndex * ANGLE_STEP
+  // Offset from the active card's arc position (-π/2 → origin)
+  const dx = -((-radius * Math.cos(angle)) - 0)  // negate so next card is to the right
+  const dy = (radius * Math.sin(angle)) - (-radius) // relative to top position
+  const scale = Math.max(0.62, 1 - stackIndex * 0.14)
+  // Very subtle tilt — enough to show depth without making text illegible
+  const rotate = stackIndex * 4
+  return { dx, dy, scale, rotate }
+}
+
+/* ─── Swipeable Card ────────────────────────────────────────────────────────
+   Top card: full drag behaviour (unchanged from before).
+   Background cards: arc-positioned, spring into place as top card commits.
+*/
 interface CardProps {
   listing: Listing
   isTop: boolean
   stackIndex: number
   topX: MotionValue<number>
+  radius: number
   onPanEnd: (e: PointerEvent, info: { offset: { x: number }; velocity: { x: number } }) => void
   onTap: () => void
 }
 
-function CatchUpCard({ listing, isTop, stackIndex, topX, onPanEnd, onTap }: CardProps) {
+function CatchUpCard({ listing, isTop, stackIndex, topX, radius, onPanEnd, onTap }: CardProps) {
   const hasDragged = useRef(false)
 
-  const rotate = useTransform(topX, [-200, 200], [-12, 12])
+  // Top card: rotate and show skip/save indicators as user drags
+  const dragRotate = useTransform(topX, [-200, 200], [-12, 12])
   const saveOpacity = useTransform(topX, [0, SWIPE_THRESHOLD], [0, 1])
   const skipOpacity = useTransform(topX, [-SWIPE_THRESHOLD, 0], [1, 0])
+
+  // Arc position for background cards
+  const { dx, dy, scale, rotate } = arcPosition(stackIndex, radius)
 
   return (
     <motion.div
       className="absolute inset-0"
       style={
         isTop
-          ? { x: topX, rotate, zIndex: 10, touchAction: 'none' }
+          ? { x: topX, rotate: dragRotate, zIndex: 10, touchAction: 'none' }
           : { zIndex: 10 - stackIndex }
       }
       initial={false}
       animate={
         isTop
-          ? { scale: 1, y: 0, opacity: 1 }
-          : {
-              scale: 1 - stackIndex * 0.04,
-              y: stackIndex * 10,
-              opacity: stackIndex < 3 ? 1 : 0,
+          ? // Top card: always centred, scale=1 (springs in when becoming top)
+            { x: 0, y: 0, scale: 1, rotate: 0, opacity: 1 }
+          : // Background cards: fan along the circular arc
+            {
+              x: dx,
+              y: dy,
+              scale,
+              rotate,
+              opacity: stackIndex < 4 ? 1 : 0,
             }
       }
       transition={
         isTop
-          ? { duration: 0 }
-          : { type: 'spring', stiffness: 300, damping: 30 }
+          ? // Instant position reset when card becomes top (drag takes over)
+            { duration: 0 }
+          : // Smooth spring for arc repositioning
+            { type: 'spring', stiffness: 280, damping: 28 }
       }
-      onPanStart={
-        isTop
-          ? () => {
-              hasDragged.current = false
-            }
-          : undefined
-      }
+      onPanStart={isTop ? () => { hasDragged.current = false } : undefined}
       onPan={
         isTop
           ? (_, info) => {
@@ -89,9 +118,7 @@ function CatchUpCard({ listing, isTop, stackIndex, topX, onPanEnd, onTap }: Card
       <div
         className="w-full h-full bg-background rounded-3xl shadow-lg border border-border overflow-hidden flex flex-col"
         style={{ willChange: 'transform' }}
-        onClick={() => {
-          if (isTop && !hasDragged.current) onTap()
-        }}
+        onClick={() => { if (isTop && !hasDragged.current) onTap() }}
       >
         {/* Image */}
         <div className="flex-1 relative bg-secondary overflow-hidden min-h-0">
@@ -101,9 +128,7 @@ function CatchUpCard({ listing, isTop, stackIndex, topX, onPanEnd, onTap }: Card
               alt={listing.title}
               className="w-full h-full object-contain select-none"
               draggable={false}
-              onError={(e) => {
-                ;(e.target as HTMLImageElement).style.display = 'none'
-              }}
+              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center">
@@ -172,7 +197,7 @@ function CatchUpCard({ listing, isTop, stackIndex, topX, onPanEnd, onTap }: Card
   )
 }
 
-/* ─── Catch Up View ─── */
+/* ─── Catch Up View ─────────────────────────────────────────────────────────*/
 
 interface Props {
   open: boolean
@@ -196,6 +221,21 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
   const isAnimating = useRef(false)
   const topX = useMotionValue(0)
 
+  // Measure card container height so arc radius scales correctly
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [radius, setRadius] = useState(260)
+
+  useEffect(() => {
+    const measure = () => {
+      if (containerRef.current) {
+        setRadius(containerRef.current.offsetHeight * 0.55)
+      }
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [])
+
   // Reset state when opening
   useEffect(() => {
     if (open) {
@@ -208,7 +248,9 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
 
   const isDone = currentIndex >= newListings.length
   const remaining = Math.max(newListings.length - currentIndex, 0)
-  const visibleCards = newListings.slice(currentIndex, currentIndex + 3)
+
+  // Render top card + 3 background cards (the visible arc window)
+  const visibleCards = newListings.slice(currentIndex, currentIndex + 4)
 
   const commitSwipe = useCallback(
     (direction: 'left' | 'right') => {
@@ -216,10 +258,7 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
       isAnimating.current = true
 
       const listing = newListings[currentIndex]
-      if (!listing) {
-        isAnimating.current = false
-        return
-      }
+      if (!listing) { isAnimating.current = false; return }
 
       if (direction === 'right' && !isSaved(listing.id)) {
         toggleSave(listing.id)
@@ -232,11 +271,7 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
         onComplete: () => {
           setHistory((prev) => [
             ...prev,
-            {
-              index: currentIndex,
-              action: direction === 'right' ? 'save' : 'skip',
-              listingId: listing.id,
-            },
+            { index: currentIndex, action: direction === 'right' ? 'save' : 'skip', listingId: listing.id },
           ])
           setCurrentIndex((prev) => prev + 1)
           topX.set(0)
@@ -250,14 +285,12 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
   const handlePanEnd = useCallback(
     (_: PointerEvent, info: { offset: { x: number }; velocity: { x: number } }) => {
       if (isAnimating.current) return
-
       const shouldSwipe =
         Math.abs(info.offset.x) > SWIPE_THRESHOLD ||
         Math.abs(info.velocity.x) > VELOCITY_THRESHOLD
 
       if (shouldSwipe) {
-        const direction = info.offset.x > 0 ? 'right' : 'left'
-        commitSwipe(direction)
+        commitSwipe(info.offset.x > 0 ? 'right' : 'left')
       } else {
         animate(topX, 0, { type: 'spring', stiffness: 500, damping: 35 })
       }
@@ -270,8 +303,6 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
     isAnimating.current = true
 
     const last = history[history.length - 1]
-
-    // Undo save if it was saved
     if (last.action === 'save' && isSaved(last.listingId)) {
       toggleSave(last.listingId)
     }
@@ -279,16 +310,14 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
     setCurrentIndex(last.index)
     setHistory((prev) => prev.slice(0, -1))
 
-    // Animate card back in from the side it left
+    // Spring the card back in from the side it exited
     const dir = last.action === 'save' ? 1 : -1
     topX.set(dir * 500)
     animate(topX, 0, {
       type: 'spring',
       stiffness: 300,
       damping: 30,
-      onComplete: () => {
-        isAnimating.current = false
-      },
+      onComplete: () => { isAnimating.current = false },
     })
   }, [history, isSaved, toggleSave, topX])
 
@@ -338,8 +367,8 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
             </button>
           </div>
 
-          {/* Card stack */}
-          <div className="flex-1 px-5 pb-3 relative overflow-hidden">
+          {/* Card arc stack */}
+          <div ref={containerRef} className="flex-1 px-5 pb-3 relative overflow-hidden">
             {newListings.length === 0 ? (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-8">
                 <div className="w-16 h-16 bg-background rounded-3xl flex items-center justify-center shadow-sm">
@@ -361,12 +390,7 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
                 className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-8"
                 initial={{ opacity: 0, scale: 0.8 }}
                 animate={{ opacity: 1, scale: 1 }}
-                transition={{
-                  type: 'spring',
-                  damping: 20,
-                  stiffness: 200,
-                  delay: 0.15,
-                }}
+                transition={{ type: 'spring', damping: 20, stiffness: 200, delay: 0.15 }}
               >
                 <span className="text-6xl mb-2">🏠</span>
                 <h2 className="text-2xl font-bold text-foreground">All caught up!</h2>
@@ -383,17 +407,22 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
                 </button>
               </motion.div>
             ) : (
-              visibleCards.map((listing, i) => (
-                <CatchUpCard
-                  key={listing.id}
-                  listing={listing}
-                  isTop={i === 0}
-                  stackIndex={i}
-                  topX={topX}
-                  onPanEnd={handlePanEnd}
-                  onTap={() => onOpenListing(listing)}
-                />
-              ))
+              // Render top card + arc background cards (reversed so top card is last = on top)
+              [...visibleCards].reverse().map((listing, reversedI) => {
+                const stackIndex = visibleCards.length - 1 - reversedI
+                return (
+                  <CatchUpCard
+                    key={listing.id}
+                    listing={listing}
+                    isTop={stackIndex === 0}
+                    stackIndex={stackIndex}
+                    topX={topX}
+                    radius={radius}
+                    onPanEnd={handlePanEnd}
+                    onTap={() => onOpenListing(listing)}
+                  />
+                )
+              })
             )}
           </div>
 

@@ -1,6 +1,8 @@
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { usePersistedState } from '../../hooks/usePersistedState'
+// framer-motion scroll only
 import { MapPin, Layers, Filter } from 'lucide-react'
+import { useScroll } from 'framer-motion'
 import { Listing } from '../../data/listings'
 import { useListings } from '../../context/ListingsContext'
 import BottomNav from '../../components/layout/BottomNav'
@@ -17,10 +19,11 @@ import FiltersSheet, {
   countActiveFilters,
 } from '../../components/ui/FiltersSheet'
 import CityPickerSheet from '../../components/ui/CityPickerSheet'
+import ListingCard from '../../components/ui/ListingCard'
 import ListingCardSkeleton from '../../components/ui/ListingCardSkeleton'
 import ListingModal from '../../components/ui/ListingModal'
+import PullToRefresh from '../../components/ui/PullToRefresh'
 import CatchUpView from '../../components/ui/CatchUpView'
-import CircularCarousel from '../../components/ui/CircularCarousel'
 import { track } from '../../lib/analytics'
 
 const PLATFORM_FILTERS = ['All', 'Pararius', 'Kamernet', 'Huurwoningen', 'HousingAnywhere', 'DirectWonen', 'Rentola', 'Kamer.nl', 'Huurstunt', '123Wonen', 'Funda'] as const
@@ -50,10 +53,18 @@ export default function RoomsPage() {
   }, [listings])
   usePushNotifications(handlePushOpen)
 
+  const feedRef = useRef<HTMLDivElement>(null)
+  const { scrollY } = useScroll({ container: feedRef })
+
   // Pre-filter by alerts criteria (if user has alerts, only show matching listings)
   const alertFiltered = alerts.length > 0
     ? listings.filter((l) => alerts.some((a) => alertMatchesListing(a, l)))
     : listings
+
+  // Reset scroll when any filter changes
+  useEffect(() => {
+    if (feedRef.current) feedRef.current.scrollTop = 0
+  }, [platformFilter, filters, selectedCities])
 
   // Track filter changes
   const handleFiltersChange = useCallback((next: ActiveFilters) => {
@@ -174,62 +185,71 @@ export default function RoomsPage() {
         )}
       </div>
 
-      {/* Listings carousel */}
-      <div className="flex flex-col flex-1 overflow-hidden">
-        {loading ? (
-          <div className="px-5 space-y-4 pt-2">
-            {[0, 1, 2].map((i) => (
-              <ListingCardSkeleton key={i} />
-            ))}
-          </div>
-        ) : platformFilter === 'Funda' ? (
-          <div className="flex flex-col flex-1 items-center justify-center gap-3 px-8 text-center">
-            <div className="w-14 h-14 bg-orange-50 dark:bg-orange-950 rounded-3xl flex items-center justify-center text-2xl">
-              🏗
+      {/* Listings feed with pull-to-refresh */}
+      <PullToRefresh onRefresh={refresh} scrollRef={feedRef}>
+        <div className="min-h-full pb-4 flex flex-col">
+          {loading ? (
+            <div className="px-5 space-y-4 pt-2">
+              {[0, 1, 2].map((i) => (
+                <ListingCardSkeleton key={i} />
+              ))}
             </div>
-            <div>
-              <p className="text-[15px] font-semibold text-foreground mb-1">Coming soon!</p>
-              <p className="text-sm text-muted leading-relaxed">
-                Funda charges for external search on their platform. We're working on making this happen — stay tuned!
-              </p>
+          ) : platformFilter === 'Funda' ? (
+            <div className="flex flex-col flex-1 items-center justify-center gap-3 px-8 text-center">
+              <div className="w-14 h-14 bg-orange-50 dark:bg-orange-950 rounded-3xl flex items-center justify-center text-2xl">
+                🏗
+              </div>
+              <div>
+                <p className="text-[15px] font-semibold text-foreground mb-1">Coming soon!</p>
+                <p className="text-sm text-muted leading-relaxed">
+                  Funda charges for external search on their platform. We're working on making this happen — stay tuned!
+                </p>
+              </div>
+              <button
+                onClick={() => setPlatformFilter('All')}
+                className="mt-1 px-5 h-10 bg-foreground text-background rounded-full text-sm font-medium"
+              >
+                Browse all listings
+              </button>
             </div>
-            <button
-              onClick={() => setPlatformFilter('All')}
-              className="mt-1 px-5 h-10 bg-foreground text-background rounded-full text-sm font-medium"
-            >
-              Browse all listings
-            </button>
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="flex flex-col flex-1 items-center justify-center gap-3 px-8 text-center">
-            <div className="w-14 h-14 bg-secondary rounded-3xl flex items-center justify-center">
-              <Filter size={22} strokeWidth={1.5} className="text-muted" />
+          ) : filtered.length === 0 ? (
+            <div className="flex flex-col flex-1 items-center justify-center gap-3 px-8 text-center">
+              <div className="w-14 h-14 bg-secondary rounded-3xl flex items-center justify-center">
+                <Filter size={22} strokeWidth={1.5} className="text-muted" />
+              </div>
+              <div>
+                <p className="text-[15px] font-semibold text-foreground mb-1">No listings match</p>
+                <p className="text-sm text-muted">Try adjusting or resetting your filters.</p>
+              </div>
+              <button
+                onClick={() => {
+                  setFilters(DEFAULT_FILTERS)
+                  setSelectedCities([])
+                  setPlatformFilter('All')
+                }}
+                className="mt-1 px-5 h-10 bg-foreground text-background rounded-full text-sm font-medium"
+              >
+                Reset filters
+              </button>
             </div>
-            <div>
-              <p className="text-[15px] font-semibold text-foreground mb-1">No listings match</p>
-              <p className="text-sm text-muted">Try adjusting or resetting your filters.</p>
+          ) : (
+            <div className="px-5 space-y-4 pt-2">
+              {filtered.map((listing, i) => (
+                  <ListingCard
+                    key={listing.id}
+                    listing={listing}
+                    index={i}
+                    onClick={() => setActiveListing(listing)}
+                    isSaved={isSaved(listing.id)}
+                    onToggleSave={() => toggleSave(listing.id)}
+                    scrollY={scrollY}
+                    isViewed={isViewed(listing.id)}
+                  />
+                ))}
             </div>
-            <button
-              onClick={() => {
-                setFilters(DEFAULT_FILTERS)
-                setSelectedCities([])
-                setPlatformFilter('All')
-              }}
-              className="mt-1 px-5 h-10 bg-foreground text-background rounded-full text-sm font-medium"
-            >
-              Reset filters
-            </button>
-          </div>
-        ) : (
-          <CircularCarousel
-            listings={filtered}
-            onOpenListing={setActiveListing}
-            isSaved={isSaved}
-            onToggleSave={toggleSave}
-            isViewed={isViewed}
-          />
-        )}
-      </div>
+          )}
+        </div>
+      </PullToRefresh>
 
       <BottomNav />
 
