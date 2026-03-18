@@ -17,3 +17,27 @@ supabase/.temp/
 AuthKey_*.p8
 Screenshots/
 Catch up feature/
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+vendor/bundle/
+
+# iOS build artifacts
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Android build artifacts
+*.apk
+*.aab
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/key.properties
+*.jks
+*.keystore
+google-play-key.json

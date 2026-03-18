@@ -1,0 +1,146 @@
+name: Android — Build & Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      lane:
+        description: "Fastlane lane to run"
+        required: true
+        default: "beta"
+        type: choice
+        options:
+          - beta
+          - release
+
+concurrency:
+  group: android-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-deploy:
+    name: "Android ${{ github.event.inputs.lane || 'beta' }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      # ── Vite build env ──
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+      VITE_AMPLITUDE_API_KEY: ${{ secrets.VITE_AMPLITUDE_API_KEY }}
+
+    steps:
+      # ── 0. Validate required secrets ──
+      - name: Validate required secrets
+        run: |
+          missing=()
+          [ -z "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]     && missing+=("ANDROID_KEYSTORE_BASE64")
+          [ -z "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" ]    && missing+=("ANDROID_KEYSTORE_PASSWORD")
+          [ -z "${{ secrets.ANDROID_KEY_ALIAS }}" ]            && missing+=("ANDROID_KEY_ALIAS")
+          [ -z "${{ secrets.ANDROID_KEY_PASSWORD }}" ]         && missing+=("ANDROID_KEY_PASSWORD")
+          [ -z "${{ secrets.GOOGLE_PLAY_JSON_KEY }}" ]         && missing+=("GOOGLE_PLAY_JSON_KEY")
+
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::warning::⚠️ Android deploy skipped — missing secrets: ${missing[*]}"
+            echo "SECRETS_MISSING=true" >> "$GITHUB_ENV"
+          else
+            echo "✅ All required secrets are configured"
+            echo "SECRETS_MISSING=false" >> "$GITHUB_ENV"
+          fi
+
+      # ── 1. Checkout ──
+      - name: Checkout repository
+        if: env.SECRETS_MISSING == 'false'
+        uses: actions/checkout@v4
+
+      # ── 2. Setup Java ──
+      - name: Setup Java 17
+        if: env.SECRETS_MISSING == 'false'
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+          cache: "gradle"
+
+      # ── 3. Setup Node.js ──
+      - name: Setup Node.js
+        if: env.SECRETS_MISSING == 'false'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+
+      # ── 4. Install JS dependencies ──
+      - name: Install dependencies
+        if: env.SECRETS_MISSING == 'false'
+        run: npm ci
+
+      # ── 5. Build web assets ──
+      - name: Build web app
+        if: env.SECRETS_MISSING == 'false'
+        run: npm run build
+
+      # ── 6. Sync Capacitor (Android) ──
+      - name: Capacitor sync Android
+        if: env.SECRETS_MISSING == 'false'
+        run: npx cap sync android
+
+      # ── 7. Decode Android keystore ──
+      - name: Decode keystore
+        if: env.SECRETS_MISSING == 'false'
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/release.keystore
+
+      # ── 8. Create key.properties ──
+      - name: Create key.properties
+        if: env.SECRETS_MISSING == 'false'
+        run: |
+          cat > android/key.properties <<EOF
+          storeFile=release.keystore
+          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+          EOF
+
+      # ── 9. Decode Google Play JSON key ──
+      - name: Decode Google Play JSON key
+        if: env.SECRETS_MISSING == 'false'
+        run: |
+          echo "${{ secrets.GOOGLE_PLAY_JSON_KEY }}" | base64 --decode > android/google-play-key.json
+
+      # ── 10. Setup Ruby ──
+      - name: Setup Ruby
+        if: env.SECRETS_MISSING == 'false'
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+          working-directory: android
+
+      # ── 11. Run Fastlane ──
+      - name: Run Fastlane
+        if: env.SECRETS_MISSING == 'false'
+        working-directory: android
+        env:
+          GOOGLE_PLAY_JSON_KEY_PATH: google-play-key.json
+        run: bundle exec fastlane ${{ github.event.inputs.lane || 'beta' }}
+
+      # ── 12. Upload AAB as artifact ──
+      - name: Upload AAB artifact
+        if: env.SECRETS_MISSING == 'false' && success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Roof-Android-${{ github.sha }}
+          path: android/app/build/outputs/bundle/release/app-release.aab
+          retention-days: 14
+
+      # ── 13. Summary ──
+      - name: Skipped summary
+        if: env.SECRETS_MISSING == 'true'
+        run: |
+          echo "## ⚠️ Android Deploy Skipped" >> "$GITHUB_STEP_SUMMARY"
+          echo "One or more required secrets are not configured." >> "$GITHUB_STEP_SUMMARY"
+          echo "Check the workflow logs for the list of missing secrets." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "See the [setup guide](https://github.com/${{ github.repository }}/blob/main/.github/workflows/android-deploy.yml) for details." >> "$GITHUB_STEP_SUMMARY"

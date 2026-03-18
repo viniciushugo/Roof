@@ -1,0 +1,4 @@
+app_identifier("com.hugovinicius.roof")
+apple_id(ENV["APPLE_ID"])
+team_id("34UD5W8234")
+itc_team_id(ENV["ITC_TEAM_ID"])
