@@ -3,7 +3,13 @@ dist/
 .env
 .env.local
 .env*.local
+.env.test
 .DS_Store
+
+# Playwright
+playwright-report/
+test-results/
+tests/e2e/.auth/
 ios/App/Pods/
 ios/App/build/
 .claude/

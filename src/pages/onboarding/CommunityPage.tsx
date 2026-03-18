@@ -4,6 +4,8 @@ import { Search, Bell, Zap } from 'lucide-react'
 import Button from '../../components/ui/Button'
 import { useOnboarding } from '../../context/OnboardingContext'
 import { useAlerts } from '../../context/AlertsContext'
+import { useAuth } from '../../context/AuthContext'
+import { supabase } from '../../lib/supabase'
 import { DEFAULT_FILTERS } from '../../components/ui/FiltersSheet'
 
 const sources = ['Pararius', 'Kamernet', 'Funda', 'HousingAnywhere', 'Nestpick', 'Direct landlords']
@@ -26,6 +28,7 @@ export default function CommunityPage() {
   const navigate = useNavigate()
   const { data } = useOnboarding()
   const { addAlert, alerts } = useAlerts()
+  const { user } = useAuth()
 
   const summaryItems = [
     { label: data.cities && data.cities.length > 1 ? 'Cities' : 'City', value: data.cities?.join(', ') || 'Amsterdam' },
@@ -53,6 +56,19 @@ export default function CommunityPage() {
         filters: DEFAULT_FILTERS,
       })
     }
+
+    // Sync onboarding profile data to Supabase (non-blocking)
+    if (user) {
+      supabase.from('profiles').update({
+        name: data.name ?? null,
+        gender: data.gender ?? null,
+        cities: data.cities ?? [],
+        housing_type: data.housingType ?? 'any',
+        budget_min: data.budgetMin ?? 0,
+        budget_max: data.budgetMax ?? 0,
+      }).eq('id', user.id)
+    }
+
     navigate('/app/rooms')
   }
 

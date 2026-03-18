@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Eye, EyeOff } from 'lucide-react'
@@ -20,8 +20,15 @@ function GoogleIcon() {
 
 export default function AccountPage() {
   const navigate = useNavigate()
-  const { signUp, signInWithGoogle } = useAuth()
+  const { signUp, signInWithGoogle, session } = useAuth()
   const { data } = useOnboarding()
+
+  // When session appears (e.g. after Google OAuth deep-link), continue onboarding
+  useEffect(() => {
+    if (session) {
+      navigate('/onboarding/housing-type', { replace: true })
+    }
+  }, [session, navigate])
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useMemo, useEffect, ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useMemo, useEffect, useRef, ReactNode } from 'react'
 import { ActiveFilters, DEFAULT_FILTERS } from '../components/ui/FiltersSheet'
 import { Listing } from '../data/listings'
 import { useListings } from './ListingsContext'
@@ -103,6 +103,9 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
   const [alerts, setAlertsRaw] = useState<Alert[]>(() => loadAlertsLocally())
   const [seenIds, setSeenIds] = useState<ReadonlySet<string>>(new Set())
 
+  // Track IDs with pending deletes so loadAlerts() doesn't re-insert them
+  const pendingDeletes = useRef(new Set<string>())
+
   // Wrap setAlerts so every write also persists locally
   const setAlerts = useCallback((updater: Alert[] | ((prev: Alert[]) => Alert[])) => {
     setAlertsRaw((prev) => {
@@ -121,7 +124,11 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
       .eq('user_id', user.id)
       .order('created_at', { ascending: true })
     if (data) {
-      const mapped = data.map(rowToAlert)
+      // Filter out any alerts that are being deleted — prevents the race condition
+      // where a re-fetch arrives before the DELETE has committed to the DB.
+      const mapped = data
+        .filter((row) => !pendingDeletes.current.has(row.id as string))
+        .map(rowToAlert)
       if (mapped.length > 0) mapped[0].isMain = true
       setAlerts(mapped)
     }
@@ -173,7 +180,7 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
     }
   }, [user, setAlerts])
 
-  const updateAlert = useCallback((id: string, data: Partial<Omit<Alert, 'id' | 'createdAt'>>) => {
+  const updateAlert = useCallback(async (id: string, data: Partial<Omit<Alert, 'id' | 'createdAt'>>) => {
     setAlerts((prev) => prev.map((a) => {
       if (a.id !== id) return a
       const { isMain: _, ...safeData } = data as Partial<Alert>
@@ -187,20 +194,42 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
       if (data.budgetMin !== undefined) dbData.budget_min = data.budgetMin
       if (data.budgetMax !== undefined) dbData.budget_max = data.budgetMax
       if (data.filters !== undefined) dbData.filters = data.filters
-      supabase.from('alerts').update(dbData).eq('id', id).then(() => {})
+      await supabase.from('alerts').update(dbData).eq('id', id)
     }
   }, [user, setAlerts])
 
-  const removeAlert = useCallback((id: string) => {
-    setAlerts((prev) => {
+  const removeAlert = useCallback(async (id: string) => {
+    // Check locally first — can't delete the main alert
+    setAlertsRaw((prev) => {
       const target = prev.find((a) => a.id === id)
-      if (target?.isMain) return prev // Can't delete main alert
-      return prev.filter((a) => a.id !== id)
+      if (target?.isMain) return prev
+      return prev // just for the check — actual removal below
     })
+    // Re-read to check isMain without stale closure
+    const isMain = alerts.find((a) => a.id === id)?.isMain
+    if (isMain) return
+
+    // Mark as pending delete so loadAlerts() won't re-insert it
+    pendingDeletes.current.add(id)
+
+    // Optimistic local update (immediate UI feedback)
+    setAlerts((prev) => prev.filter((a) => a.id !== id))
+
+    // Await the DB delete so Supabase is consistent before any re-fetch
     if (user) {
-      supabase.from('alerts').delete().eq('id', id)
+      const { error } = await supabase.from('alerts').delete().eq('id', id)
+      if (error) {
+        // DB delete failed — roll back
+        pendingDeletes.current.delete(id)
+        loadAlerts() // re-fetch clean state from DB
+      } else {
+        // Delete succeeded — safe to stop blocking re-fetches
+        pendingDeletes.current.delete(id)
+      }
+    } else {
+      pendingDeletes.current.delete(id)
     }
-  }, [user, setAlerts])
+  }, [user, alerts, setAlerts, loadAlerts])
 
   const newMatchIds = useMemo(() => {
     const ids = new Set<string>()

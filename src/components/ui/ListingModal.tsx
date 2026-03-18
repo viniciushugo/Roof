@@ -108,7 +108,7 @@ export default function ListingModal({ listing, onClose, onViewed }: Props) {
           >
             {/* Hero image — fixed height prevents scroll-behind */}
             <div className="relative flex-shrink-0 rounded-t-[28px] overflow-hidden bg-secondary" style={{ height: '42%' }}>
-              <ImageGallery images={listing.images} alt={listing.title} />
+              <ImageGallery images={listing.images} alt={listing.title} fill />
               <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/55 to-transparent pointer-events-none" />
               <div className="absolute top-3 inset-x-0 flex justify-center pointer-events-none">
                 <div className="w-10 h-1 rounded-full bg-background/60" />

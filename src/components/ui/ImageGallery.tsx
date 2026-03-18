@@ -4,13 +4,15 @@ import { motion, AnimatePresence, type PanInfo } from 'framer-motion'
 interface Props {
   images: string[]
   alt?: string
+  /** When true, image fills its parent container instead of using a fixed 4:3 aspect ratio */
+  fill?: boolean
 }
 
 const swipeConfidenceThreshold = 10_000
 const swipePower = (offset: number, velocity: number) =>
   Math.abs(offset) * velocity
 
-export default function ImageGallery({ images, alt = '' }: Props) {
+export default function ImageGallery({ images, alt = '', fill = false }: Props) {
   const [index, setIndex] = useState(0)
   const [direction, setDirection] = useState(0)
   const constraintsRef = useRef<HTMLDivElement>(null)
@@ -19,7 +21,7 @@ export default function ImageGallery({ images, alt = '' }: Props) {
   const photos = images.length > 0 ? images : []
   if (photos.length === 0) {
     return (
-      <div className="w-full aspect-[4/3] bg-secondary rounded-t-[28px]" />
+      <div className={`w-full bg-secondary rounded-t-[28px] ${fill ? 'h-full' : 'aspect-[4/3]'}`} />
     )
   }
 
@@ -33,7 +35,7 @@ export default function ImageGallery({ images, alt = '' }: Props) {
           e.currentTarget.onerror = null
           e.currentTarget.style.opacity = '0'
         }}
-        className="w-full aspect-[4/3] object-cover"
+        className={`w-full object-cover ${fill ? 'h-full' : 'aspect-[4/3]'}`}
       />
     )
   }
@@ -77,7 +79,7 @@ export default function ImageGallery({ images, alt = '' }: Props) {
       </div>
 
       {/* Swipeable image area */}
-      <div className="relative w-full aspect-[4/3] overflow-hidden">
+      <div className={`relative w-full overflow-hidden ${fill ? 'h-full' : 'aspect-[4/3]'}`}>
         <AnimatePresence initial={false} custom={direction} mode="popLayout">
           <motion.img
             key={`slide-${index}`}

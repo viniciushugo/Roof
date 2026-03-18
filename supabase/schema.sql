@@ -73,6 +73,9 @@ CREATE TRIGGER on_auth_user_created
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 
+-- Add gender column to profiles (collected during onboarding)
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS gender TEXT;
+
 -- Add notification preferences column to profiles
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS notification_prefs JSONB DEFAULT '{"instantAlerts":true,"emailAlerts":true,"dailyDigest":false}';
 

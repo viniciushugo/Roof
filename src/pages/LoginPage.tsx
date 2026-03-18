@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Eye, EyeOff, ChevronDown } from 'lucide-react'
@@ -19,7 +19,14 @@ function GoogleIcon() {
 
 export default function LoginPage() {
   const navigate = useNavigate()
-  const { signIn, signInWithGoogle } = useAuth()
+  const { signIn, signInWithGoogle, session } = useAuth()
+
+  // When session appears (e.g. after Google OAuth deep-link), navigate away
+  useEffect(() => {
+    if (session) {
+      navigate('/app/rooms', { replace: true })
+    }
+  }, [session, navigate])
 
   const [showEmailForm, setShowEmailForm] = useState(false)
   const [email, setEmail] = useState('')
