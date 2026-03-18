@@ -12,6 +12,7 @@ import { Listing } from '../../data/listings'
 import { useListings } from '../../context/ListingsContext'
 import { useSaved } from '../../context/SavedContext'
 import ListingCard from './ListingCard'
+import { track } from '../../lib/analytics'
 
 // ─── Swipe constants ─────────────────────────────────────────────────────────
 const SWIPE_THRESHOLD    = 80
@@ -202,7 +203,18 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
       const listing = newListings[currentIndex]
       if (!listing) { isAnimating.current = false; return }
 
-      if (direction === 'right' && !isSaved(listing.id)) toggleSave(listing.id)
+      if (direction === 'right' && !isSaved(listing.id)) {
+        track('property_liked', {
+          property_id: listing.id,
+          price: listing.price,
+          housing_type: listing.type
+        })
+        toggleSave(listing.id)
+      } else if (direction === 'left') {
+        track('property_passed', {
+          property_id: listing.id
+        })
+      }
 
       setExitDirection(direction)
       setExitVelocity(throwVelocity)

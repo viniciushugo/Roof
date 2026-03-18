@@ -5,6 +5,7 @@ import { useOnboarding } from '../../context/OnboardingContext'
 import { useAlerts } from '../../context/AlertsContext'
 import { DEFAULT_FILTERS } from '../../components/ui/FiltersSheet'
 import Toggle from '../../components/ui/Toggle'
+import { track } from '../../lib/analytics'
 
 const CITIES = ['Amsterdam', 'Rotterdam', 'Utrecht', 'The Hague', 'Eindhoven', 'Groningen']
 
@@ -84,6 +85,13 @@ export default function PreferencesPage() {
   const handleSave = () => {
     const budgetMin = parseInt(min) || 0
     const budgetMax = parseInt(max) || 0
+
+    track('preferences_updated', {
+      cities,
+      housingType: openToAnything ? 'any' : housingType,
+      budgetMin,
+      budgetMax,
+    })
 
     // Update onboarding context
     setData({

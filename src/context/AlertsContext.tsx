@@ -186,6 +186,10 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
       const { isMain: _, ...safeData } = data as Partial<Alert>
       return { ...a, ...safeData }
     }))
+    track('alert_updated', {
+      alert_id: id,
+      ...data
+    })
     if (user) {
       const dbData: Record<string, unknown> = {}
       if (data.name !== undefined) dbData.name = data.name
@@ -214,6 +218,7 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
 
     // Optimistic local update (immediate UI feedback)
     setAlerts((prev) => prev.filter((a) => a.id !== id))
+    track('alert_deleted', { alert_id: id })
 
     // Await the DB delete so Supabase is consistent before any re-fetch
     if (user) {

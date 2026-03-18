@@ -6,6 +6,7 @@ import OnboardingLayout from '../../components/layout/OnboardingLayout'
 import Button from '../../components/ui/Button'
 import { useAuth } from '../../context/AuthContext'
 import { useOnboarding } from '../../context/OnboardingContext'
+import { track } from '../../lib/analytics'
 
 function GoogleIcon() {
   return (
@@ -44,10 +45,14 @@ export default function AccountPage() {
     const { error } = await signUp(email, password, data.name ?? '')
     setLoading(false)
     if (error) setError(error)
-    else navigate('/onboarding/housing-type')
+    else {
+      track('onboarding_step_completed', { step_name: 'account' })
+      navigate('/onboarding/housing-type')
+    }
   }
 
   const handleGoogle = async () => {
+    track('onboarding_step_completed', { step_name: 'account' })
     setGoogleLoading(true)
     setError(null)
     const { error } = await signInWithGoogle()

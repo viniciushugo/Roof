@@ -50,8 +50,8 @@ export default function ListingModal({ listing, onClose, onViewed }: Props) {
       const intro = generateIntro(listing)
       setIntroText(intro)
       onViewed?.(listing.id)
-      track('listing_viewed', {
-        listing_id: listing.id,
+      track('property_details_viewed', {
+        property_id: listing.id,
         source: listing.source,
         city: listing.city,
         price: listing.price,

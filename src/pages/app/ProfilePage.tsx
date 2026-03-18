@@ -5,12 +5,18 @@ import { User, CreditCard, LogOut, ChevronRight, X, Heart } from 'lucide-react'
 import BottomNav from '../../components/layout/BottomNav'
 import RoofLogo from '../../assets/RoofLogo'
 import { useOnboarding } from '../../context/OnboardingContext'
+import { track } from '../../lib/analytics'
+import { useEffect } from 'react'
 
 export default function ProfilePage() {
   const navigate = useNavigate()
   const { data } = useOnboarding()
   const name = data.name || 'You'
   const [showPremiumModal, setShowPremiumModal] = useState(false)
+
+  useEffect(() => {
+    track('profile_viewed')
+  }, [])
 
   const menuItems = [
     {

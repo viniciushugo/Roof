@@ -4,6 +4,7 @@ import { Home, Ruler } from 'lucide-react'
 import { hapticLight } from '../../lib/haptics'
 import { Listing } from '../../data/listings'
 import SourceBadge from './SourceBadge'
+import { track } from '../../lib/analytics'
 
 const CARD_HEIGHT = 300
 
@@ -94,6 +95,13 @@ const ListingCard = memo(forwardRef<HTMLDivElement, Props>(
             onClick={(e) => {
               e.stopPropagation()
               hapticLight()
+              if (!isSaved) {
+                track('property_liked', {
+                  property_id: listing.id,
+                  price: listing.price,
+                  housing_type: listing.type,
+                })
+              }
               onToggleSave()
             }}
             data-tour="save"

@@ -1,7 +1,8 @@
-import { ReactNode } from 'react'
+import { ReactNode, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { ChevronLeft } from 'lucide-react'
+import { track } from '../../lib/analytics'
 
 interface OnboardingLayoutProps {
   children: ReactNode
@@ -19,6 +20,12 @@ export default function OnboardingLayout({
   showBack = true,
 }: OnboardingLayoutProps) {
   const navigate = useNavigate()
+  const location = useLocation()
+
+  useEffect(() => {
+    const stepName = location.pathname.split('/').pop() || 'unknown'
+    track('onboarding_step_viewed', { step_name: stepName })
+  }, [location.pathname])
 
   const handleBack = () => {
     if (onBack) {

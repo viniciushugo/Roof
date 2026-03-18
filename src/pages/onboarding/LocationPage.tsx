@@ -4,6 +4,7 @@ import OnboardingLayout from '../../components/layout/OnboardingLayout'
 import Input from '../../components/ui/Input'
 import Button from '../../components/ui/Button'
 import { useOnboarding } from '../../context/OnboardingContext'
+import { track } from '../../lib/analytics'
 
 const CITIES = [
   'Amsterdam', 'Rotterdam', 'Utrecht', 'The Hague', 'Eindhoven',
@@ -36,6 +37,7 @@ export default function LocationPage() {
 
   const handleNext = () => {
     if (cities.length === 0) return
+    track('onboarding_step_completed', { step_name: 'location' })
     setData({ country, cities })
     navigate('/onboarding/budget')
   }

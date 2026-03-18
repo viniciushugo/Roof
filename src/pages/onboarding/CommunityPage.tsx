@@ -7,6 +7,7 @@ import { useAlerts } from '../../context/AlertsContext'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { DEFAULT_FILTERS } from '../../components/ui/FiltersSheet'
+import { track } from '../../lib/analytics'
 
 const sources = ['Pararius', 'Kamernet', 'Funda', 'HousingAnywhere', 'Nestpick', 'Direct landlords']
 
@@ -43,6 +44,8 @@ export default function CommunityPage() {
   ]
 
   const handleStart = () => {
+    track('onboarding_completed')
+
     // Create initial alert from onboarding preferences (only once)
     if (alerts.length === 0) {
       const cities = data.cities ?? []

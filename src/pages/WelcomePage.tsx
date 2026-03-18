@@ -5,6 +5,8 @@ import { Eye, EyeOff } from 'lucide-react'
 import RoofLogo from '../assets/RoofLogo'
 import Button from '../components/ui/Button'
 import { useAuth } from '../context/AuthContext'
+import { trackEvent } from '../lib/amplitude'
+import { useEffect } from 'react'
 
 function GoogleIcon() {
   return (
@@ -28,8 +30,13 @@ export default function WelcomePage() {
   const [googleLoading, setGoogleLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  useEffect(() => {
+    trackEvent('welcome_screen_viewed')
+  }, [])
+
   const handleSignIn = async () => {
     if (!email || !password) { setError('Please fill in all fields.'); return }
+    trackEvent('login_started', { method: 'email' })
     setLoading(true); setError(null)
     const { error } = await signIn(email, password)
     setLoading(false)
@@ -38,6 +45,7 @@ export default function WelcomePage() {
   }
 
   const handleGoogle = async () => {
+    trackEvent('login_started', { method: 'google' })
     setGoogleLoading(true)
     setError(null)
     const { error } = await signInWithGoogle()

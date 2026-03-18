@@ -4,6 +4,7 @@ import OnboardingLayout from '../../components/layout/OnboardingLayout'
 import Input from '../../components/ui/Input'
 import Button from '../../components/ui/Button'
 import { useOnboarding } from '../../context/OnboardingContext'
+import { track } from '../../lib/analytics'
 
 const GENDER_OPTIONS: { value: 'male' | 'female' | 'other'; label: string; emoji: string }[] = [
   { value: 'male',   label: 'Male',   emoji: '👨' },
@@ -19,6 +20,7 @@ export default function NamePage() {
 
   const handleNext = () => {
     if (!name.trim()) return
+    track('onboarding_step_completed', { step_name: 'name' })
     setData({ name: name.trim(), gender: gender ?? 'other' })
     navigate('/onboarding/account')
   }

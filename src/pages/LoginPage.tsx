@@ -5,6 +5,7 @@ import { Eye, EyeOff, ChevronDown } from 'lucide-react'
 import RoofLogo from '../assets/RoofLogo'
 import Button from '../components/ui/Button'
 import { useAuth } from '../context/AuthContext'
+import { trackEvent } from '../lib/amplitude'
 
 function GoogleIcon() {
   return (
@@ -38,6 +39,7 @@ export default function LoginPage() {
 
   const handleSignIn = async () => {
     if (!email || !password) { setError('Please fill in all fields.'); return }
+    trackEvent('login_started', { method: 'email' })
     setLoading(true)
     setError(null)
     const { error } = await signIn(email, password)
@@ -50,6 +52,7 @@ export default function LoginPage() {
   }
 
   const handleGoogle = async () => {
+    trackEvent('login_started', { method: 'google' })
     setGoogleLoading(true)
     setError(null)
     const { error } = await signInWithGoogle()

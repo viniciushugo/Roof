@@ -4,6 +4,7 @@ import { Browser } from '@capacitor/browser'
 import { App as CapacitorApp } from '@capacitor/app'
 import { Capacitor } from '@capacitor/core'
 import { supabase } from '../lib/supabase'
+import { identifyUser, resetUser, trackEvent } from '../lib/amplitude'
 
 async function sendWelcomeEmail(email: string, name: string) {
   try {
@@ -56,6 +57,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
+      if (session?.user) {
+        identifyUser(session.user.id, { 
+          email: session.user.email, 
+          name: session.user.user_metadata?.name 
+        })
+      }
       // Don't resolve loading if an OAuth fragment is pending — wait for onAuthStateChange
       const hasOAuthFragment = window.location.hash.includes('access_token')
       if (!hasOAuthFragment) setLoading(false)
@@ -63,7 +70,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
-      if (_event === 'TOKEN_REFRESHED' || _event === 'SIGNED_IN' || _event === 'INITIAL_SESSION') {
+      if (session?.user) {
+        identifyUser(session.user.id, { 
+          email: session.user.email, 
+          name: session.user.user_metadata?.name 
+        })
+      } else {
+        resetUser()
+      }
+
+      if (_event === 'SIGNED_IN') {
+        trackEvent('login_completed')
+        setLoading(false)
+      } else if (_event === 'TOKEN_REFRESHED' || _event === 'INITIAL_SESSION') {
         setLoading(false)
       }
     })

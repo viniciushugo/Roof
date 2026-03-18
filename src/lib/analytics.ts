@@ -1,10 +1,14 @@
 import { supabase } from './supabase'
+import { trackEvent, EventName } from './amplitude'
 
 /**
  * Lightweight analytics — fire-and-forget event tracking to Supabase.
  * Errors are silently swallowed so tracking never blocks the UI.
  */
 export function track(event: string, properties?: Record<string, unknown>) {
+  // Forward to Amplitude
+  trackEvent(event as EventName, properties)
+
   // Run async but don't await — non-blocking
   ;(async () => {
     try {

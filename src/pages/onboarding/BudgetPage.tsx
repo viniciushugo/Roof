@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import OnboardingLayout from '../../components/layout/OnboardingLayout'
 import Button from '../../components/ui/Button'
 import { useOnboarding } from '../../context/OnboardingContext'
+import { track } from '../../lib/analytics'
 
 const PRESETS = [
   { label: '< €800',      min: 0,    max: 800  },
@@ -27,6 +28,7 @@ export default function BudgetPage() {
   )
 
   const handleNext = () => {
+    track('onboarding_step_completed', { step_name: 'budget' })
     setData({ budgetMin: parseInt(min) || 0, budgetMax: parseInt(max) || 0 })
     navigate('/onboarding/filter-details')
   }

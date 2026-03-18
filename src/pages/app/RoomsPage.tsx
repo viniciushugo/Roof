@@ -56,6 +56,10 @@ export default function RoomsPage() {
   const feedRef = useRef<HTMLDivElement>(null)
   const { scrollY } = useScroll({ container: feedRef })
 
+  useEffect(() => {
+    track('rooms_page_viewed')
+  }, [])
+
   // Pre-filter by alerts criteria (if user has alerts, only show matching listings)
   const alertFiltered = alerts.length > 0
     ? listings.filter((l) => alerts.some((a) => alertMatchesListing(a, l)))

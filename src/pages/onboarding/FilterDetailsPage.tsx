@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import OnboardingLayout from '../../components/layout/OnboardingLayout'
 import Button from '../../components/ui/Button'
 import { useOnboarding } from '../../context/OnboardingContext'
+import { track } from '../../lib/analytics'
 
 const BEDROOM_OPTIONS = [
   { label: '1', value: 1 },
@@ -34,6 +35,7 @@ export default function FilterDetailsPage() {
   }
 
   const handleNext = () => {
+    track('onboarding_step_completed', { step_name: 'filter-details' })
     setData({
       sizeMin: sizeMin ? parseInt(sizeMin) : undefined,
       sizeMax: sizeMax ? parseInt(sizeMax) : undefined,
@@ -125,7 +127,10 @@ export default function FilterDetailsPage() {
 
         <div className="mt-auto pb-8 pt-6 space-y-3">
           <Button onClick={handleNext}>Next</Button>
-          <Button variant="ghost" onClick={() => navigate('/onboarding/notifications')}>
+          <Button variant="ghost" onClick={() => {
+            track('onboarding_step_completed', { step_name: 'filter-details', action: 'skip' })
+            navigate('/onboarding/notifications')
+          }}>
             Skip for now
           </Button>
         </div>

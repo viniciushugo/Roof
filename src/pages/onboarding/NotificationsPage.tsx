@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import { Bell, Zap, Clock } from 'lucide-react'
 import OnboardingLayout from '../../components/layout/OnboardingLayout'
 import Button from '../../components/ui/Button'
+import { track } from '../../lib/analytics'
 
 const features = [
   {
@@ -26,6 +27,7 @@ export default function NotificationsPage() {
   const navigate = useNavigate()
 
   const handleEnable = () => {
+    track('onboarding_step_completed', { step_name: 'notifications', action: 'enable' })
     navigate('/onboarding/community')
   }
 
@@ -65,7 +67,10 @@ export default function NotificationsPage() {
           <Button onClick={handleEnable}>
             Enable notifications
           </Button>
-          <Button variant="ghost" onClick={() => navigate('/onboarding/community')}>
+          <Button variant="ghost" onClick={() => {
+            track('onboarding_step_completed', { step_name: 'notifications', action: 'skip' })
+            navigate('/onboarding/community')
+          }}>
             Not now
           </Button>
         </div>

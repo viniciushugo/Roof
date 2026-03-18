@@ -5,6 +5,7 @@ import RadioOption from '../../components/ui/RadioOption'
 import Toggle from '../../components/ui/Toggle'
 import Button from '../../components/ui/Button'
 import { useOnboarding } from '../../context/OnboardingContext'
+import { track } from '../../lib/analytics'
 
 const housingTypes = [
   { id: 'private_room', label: 'Private bedroom' },
@@ -22,6 +23,7 @@ export default function HousingTypePage() {
 
   const handleNext = () => {
     if (!selected && !openToAnything) return
+    track('onboarding_step_completed', { step_name: 'housing-type' })
     setData({ housingType: openToAnything ? 'any' : selected })
     navigate('/onboarding/location')
   }
