@@ -158,7 +158,7 @@ export default function RoomsPage() {
 
     observer.observe(sentinel)
     return () => observer.disconnect()
-  }, [filtered.length, hasMore, visibleCount])
+  }, [filtered.length, hasMore])
 
   const newCount = filtered.filter((l) => l.isNew).length
 
