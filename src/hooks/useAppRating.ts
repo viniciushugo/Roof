@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { Capacitor } from '@capacitor/core'
 import { useSaved } from '../context/SavedContext'
 import { storage } from '../lib/storage'
 
@@ -14,24 +15,20 @@ export function useAppRating() {
 
     storage.setItem(RATING_KEY, 'true')
 
-    // Use a short delay so it doesn't interrupt the save action
-    const timer = setTimeout(() => {
+    const timer = setTimeout(async () => {
       try {
-        // Try native-like rating prompt via Capacitor plugin if available
-        // Falls back to a simple confirm dialog for web
-        const shouldRate = window.confirm(
-          'Enjoying Roof? We\'d love your feedback! Would you like to rate the app?'
-        )
-        if (shouldRate) {
-          // On iOS/Android this would open the App Store / Play Store page
-          // For web, we can open a feedback URL or just acknowledge
-          // Replace with actual store URL when available
+        if (Capacitor.isNativePlatform()) {
+          // Use native SKStoreReviewController on iOS
+          const { RateApp } = await import('capacitor-rate-app')
+          await RateApp.requestReview()
+        } else {
+          // Web fallback — open App Store directly
           window.open('https://apps.apple.com/app/roof', '_blank')
         }
       } catch {
-        // Silently fail if anything goes wrong
+        // Silently fail — rating prompt is non-critical
       }
-    }, 1000)
+    }, 1500)
 
     return () => clearTimeout(timer)
   }, [savedIds.size])
