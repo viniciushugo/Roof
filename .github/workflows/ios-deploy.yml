@@ -95,10 +95,14 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.3"
-          bundler-cache: true
-          working-directory: ios/App
 
-      # ── 7. Run Fastlane ──
+      # ── 7. Install Fastlane ──
+      - name: Install Fastlane
+        if: env.SECRETS_MISSING == 'false'
+        working-directory: ios/App
+        run: bundle install
+
+      # ── 8. Run Fastlane ──
       - name: Run Fastlane
         if: env.SECRETS_MISSING == 'false'
         working-directory: ios/App
