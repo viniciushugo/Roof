@@ -170,17 +170,14 @@ export function ListingsProvider({ children }: { children: ReactNode }) {
     // Immediately re-fetch current listings from DB
     try {
       const data = await fetchFromSupabase()
-      if (data.length > 0) {
-        setListings(data)
-        data.forEach((l) => knownIds.current.add(l.id))
-        setRefreshing(false)
-        return true
-      }
-      setRefreshing(false)
-      return false
+      setListings(data)
+      // Rebuild the known IDs set to match the latest data
+      knownIds.current = new Set(data.map((l) => l.id))
+      return true
     } catch {
-      setRefreshing(false)
       return false
+    } finally {
+      setRefreshing(false)
     }
   }, [])
 
