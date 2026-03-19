@@ -25,6 +25,7 @@ import ListingModal from '../../components/ui/ListingModal'
 import PullToRefresh from '../../components/ui/PullToRefresh'
 import CatchUpView from '../../components/ui/CatchUpView'
 import { track } from '../../lib/analytics'
+import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 
 const PLATFORM_FILTERS = ['All', 'Pararius', 'Kamernet', 'Huurwoningen', 'HousingAnywhere', 'DirectWonen', 'Rentola', 'Kamer.nl', 'Huurstunt', '123Wonen', 'Funda'] as const
 type PlatformFilter = typeof PLATFORM_FILTERS[number]
@@ -39,6 +40,32 @@ export default function RoomsPage() {
   const [activeListing, setActiveListing] = useState<Listing | null>(null)
   const { isSaved, toggleSave } = useSaved()
   const { listings, loading, refresh } = useListings()
+  const isOnline = useOnlineStatus()
+  const [refreshFailed, setRefreshFailed] = useState(false)
+  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const handleRefresh = useCallback(async () => {
+    const success = await refresh()
+    setRefreshFailed(!success)
+    if (!success) {
+      if (refreshTimeoutRef.current !== null) {
+        clearTimeout(refreshTimeoutRef.current)
+      }
+      refreshTimeoutRef.current = setTimeout(() => {
+        setRefreshFailed(false)
+        refreshTimeoutRef.current = null
+      }, 3_000)
+    }
+  }, [refresh])
+
+  useEffect(() => {
+    return () => {
+      if (refreshTimeoutRef.current !== null) {
+        clearTimeout(refreshTimeoutRef.current)
+        refreshTimeoutRef.current = null
+      }
+    }
+  }, [])
 
   // Derived from real Supabase data — no dummy fallbacks
   const allCities = useMemo(() => [...new Set(listings.map((l) => l.city))].sort(), [listings])
@@ -53,6 +80,9 @@ export default function RoomsPage() {
   }, [listings])
   usePushNotifications(handlePushOpen)
 
+  const PAGE_SIZE = 20
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
+  const sentinelRef = useRef<HTMLDivElement>(null)
   const feedRef = useRef<HTMLDivElement>(null)
   const { scrollY } = useScroll({ container: feedRef })
 
@@ -65,9 +95,10 @@ export default function RoomsPage() {
     ? listings.filter((l) => alerts.some((a) => alertMatchesListing(a, l)))
     : listings
 
-  // Reset scroll when any filter changes
+  // Reset scroll and pagination when any filter changes
   useEffect(() => {
     if (feedRef.current) feedRef.current.scrollTop = 0
+    setVisibleCount(PAGE_SIZE)
   }, [platformFilter, filters, selectedCities])
 
   // Track filter changes
@@ -106,6 +137,28 @@ export default function RoomsPage() {
     if (filters.neighborhoods.length > 0 && !filters.neighborhoods.includes(l.neighborhood)) return false
     return true
   })
+
+  const visibleListings = filtered.slice(0, visibleCount)
+  const hasMore = visibleCount < filtered.length
+
+  // Infinite scroll — load more cards as user scrolls near the bottom
+  useEffect(() => {
+    const sentinel = sentinelRef.current
+    const container = feedRef.current
+    if (!sentinel || !container || !hasMore) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setVisibleCount((prev) => Math.min(prev + PAGE_SIZE, filtered.length))
+        }
+      },
+      { root: container, rootMargin: '400px' },
+    )
+
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [filtered.length, hasMore])
 
   const newCount = filtered.filter((l) => l.isNew).length
 
@@ -178,6 +231,23 @@ export default function RoomsPage() {
         </div>
       </div>
 
+      {/* Offline / refresh failed banners */}
+      {!isOnline && (
+        <div className="px-5 py-2 flex items-center gap-2 flex-shrink-0 bg-amber-50 dark:bg-amber-950/30">
+          <div className="w-2 h-2 rounded-full bg-amber-500" />
+          <span className="text-xs text-amber-700 dark:text-amber-400 font-medium">
+            You're offline — showing cached listings
+          </span>
+        </div>
+      )}
+      {refreshFailed && isOnline && (
+        <div className="px-5 py-2 flex items-center gap-2 flex-shrink-0 bg-red-50 dark:bg-red-950/30">
+          <span className="text-xs text-red-600 dark:text-red-400 font-medium">
+            Couldn't refresh — check your connection
+          </span>
+        </div>
+      )}
+
       {/* New listings badge */}
       <div className="px-5 pb-2 flex items-center gap-2 flex-shrink-0">
         <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
@@ -190,7 +260,7 @@ export default function RoomsPage() {
       </div>
 
       {/* Listings feed with pull-to-refresh */}
-      <PullToRefresh onRefresh={refresh} scrollRef={feedRef}>
+      <PullToRefresh onRefresh={handleRefresh} scrollRef={feedRef}>
         <div className="min-h-full pb-4 flex flex-col">
           {loading ? (
             <div className="px-5 space-y-4 pt-2">
@@ -238,7 +308,7 @@ export default function RoomsPage() {
             </div>
           ) : (
             <div className="px-5 space-y-4 pt-2">
-              {filtered.map((listing, i) => (
+              {visibleListings.map((listing, i) => (
                   <ListingCard
                     key={listing.id}
                     listing={listing}
@@ -250,6 +320,7 @@ export default function RoomsPage() {
                     isViewed={isViewed(listing.id)}
                   />
                 ))}
+              {hasMore && <div ref={sentinelRef} className="h-px" />}
             </div>
           )}
         </div>

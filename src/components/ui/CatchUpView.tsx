@@ -8,6 +8,7 @@ import {
 } from 'framer-motion'
 import { X, Undo2, Heart, SkipForward, Sparkles, Share2 } from 'lucide-react'
 import { hapticLight } from '../../lib/haptics'
+import { shareListing } from '../../lib/share'
 import { Listing } from '../../data/listings'
 import { useListings } from '../../context/ListingsContext'
 import { useSaved } from '../../context/SavedContext'
@@ -250,14 +251,12 @@ export default function CatchUpView({ open, onClose, onOpenListing }: Props) {
     if (!topCard) return
     hapticLight()
     try {
-      await navigator.share({
+      await shareListing({
         title: topCard.title,
         text: `€${topCard.price.toLocaleString()}/mo in ${topCard.neighborhood}`,
         url: topCard.url,
       })
-    } catch {
-      try { await navigator.clipboard.writeText(topCard.url) } catch {}
-    }
+    } catch {}
   }, [topCard])
 
   return (

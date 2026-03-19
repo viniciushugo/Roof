@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { X, ExternalLink, Copy, Check, Home, Ruler, Sparkles, Calendar, Share2, ArrowLeft } from 'lucide-react'
 import { hapticLight } from '../../lib/haptics'
 import { track } from '../../lib/analytics'
+import { shareListing } from '../../lib/share'
 import { Listing } from '../../data/listings'
 import SourceBadge from './SourceBadge'
 import ImageGallery from './ImageGallery'
@@ -193,23 +194,23 @@ export default function ListingModal({ listing, onClose, onViewed }: Props) {
             {/* Pinned actions */}
             <div className="flex-shrink-0 border-t border-border bg-background px-4 pt-3 pb-8">
               <div className="flex gap-2">
-                {(typeof navigator !== 'undefined' && (navigator.share || navigator.clipboard)) && (
-                  <button
-                    onClick={async () => {
-                      hapticLight()
-                      track('listing_shared', { listing_id: listing.id, source: listing.source })
-                      try {
-                        await navigator.share({ title: listing.title, text: `€${listing.price}/mo in ${listing.neighborhood || listing.city}`, url: listing.url })
-                      } catch {
-                        try { await navigator.clipboard.writeText(listing.url) } catch {}
-                      }
-                    }}
-                    className="w-12 h-12 bg-secondary rounded-xl flex items-center justify-center active:scale-[0.98] transition-all flex-shrink-0"
-                    aria-label="Share"
-                  >
-                    <Share2 size={16} strokeWidth={2} className="text-foreground" />
-                  </button>
-                )}
+                <button
+                  onClick={async () => {
+                    hapticLight()
+                    track('listing_shared', { listing_id: listing.id, source: listing.source })
+                    try {
+                      await shareListing({
+                        title: listing.title,
+                        text: `€${listing.price}/mo in ${listing.neighborhood || listing.city}`,
+                        url: listing.url,
+                      })
+                    } catch {}
+                  }}
+                  className="w-12 h-12 bg-secondary rounded-xl flex items-center justify-center active:scale-[0.98] transition-all flex-shrink-0"
+                  aria-label="Share"
+                >
+                  <Share2 size={16} strokeWidth={2} className="text-foreground" />
+                </button>
                 <button
                   onClick={copyIntro}
                   className={`flex-1 h-12 rounded-xl text-[14px] font-semibold flex items-center justify-center gap-1.5 active:scale-[0.98] transition-all min-w-0 ${copied ? 'bg-green-500 text-white' : 'bg-secondary text-foreground'}`}
