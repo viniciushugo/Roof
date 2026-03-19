@@ -22,8 +22,8 @@ export function useAppRating() {
           const { RateApp } = await import('capacitor-rate-app')
           await RateApp.requestReview()
         } else {
-          // Web fallback — open App Store directly
-          window.open('https://apps.apple.com/app/roof', '_blank')
+          // Web fallback — navigate to App Store directly
+          window.location.href = 'https://apps.apple.com/app/roof'
         }
       } catch {
         // Silently fail — rating prompt is non-critical
