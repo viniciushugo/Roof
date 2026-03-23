@@ -27,6 +27,8 @@ interface AuthContextType {
   signUp: (email: string, password: string, name: string) => Promise<{ error: string | null }>
   signIn: (email: string, password: string) => Promise<{ error: string | null }>
   signInWithGoogle: () => Promise<{ error: string | null }>
+  signInWithApple: () => Promise<{ error: string | null }>
+  deleteAccount: () => Promise<{ error: string | null }>
   signOut: () => Promise<void>
 }
 
@@ -37,6 +39,8 @@ const AuthContext = createContext<AuthContextType>({
   signUp: async () => ({ error: null }),
   signIn: async () => ({ error: null }),
   signInWithGoogle: async () => ({ error: null }),
+  signInWithApple: async () => ({ error: null }),
+  deleteAccount: async () => ({ error: null }),
   signOut: async () => {},
 })
 
@@ -230,12 +234,75 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const signInWithApple = async () => {
+    const isNative = Capacitor.isNativePlatform()
+
+    if (isNative) {
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'apple',
+        options: {
+          redirectTo: 'com.hugovinicius.roof://app/rooms',
+          skipBrowserRedirect: true,
+        },
+      })
+      if (error) {
+        const msg = error.message || ''
+        if (msg.includes('provider') || msg.includes('not enabled') || msg.includes('Unsupported')) {
+          return { error: 'Apple sign-in is not yet configured. Enable the Apple provider in the Supabase Dashboard under Authentication → Providers.' }
+        }
+        return { error: msg }
+      }
+      if (data?.url) {
+        await Browser.open({ url: data.url, windowName: '_self' })
+      }
+      return { error: null }
+    } else {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'apple',
+        options: { redirectTo: `${window.location.origin}/app/rooms` },
+      })
+      if (error) {
+        const msg = error.message || ''
+        if (msg.includes('provider') || msg.includes('not enabled') || msg.includes('Unsupported')) {
+          return { error: 'Apple sign-in is not yet configured. Enable the Apple provider in the Supabase Dashboard under Authentication → Providers.' }
+        }
+        return { error: msg }
+      }
+      return { error: null }
+    }
+  }
+
+  const deleteAccount = async () => {
+    if (!session?.user) return { error: 'Not signed in' }
+    try {
+      // Refresh to ensure a valid JWT
+      await supabase.auth.refreshSession()
+
+      const { data, error: fnError } = await supabase.functions.invoke('delete-account')
+      if (fnError) {
+        // supabase.functions.invoke wraps non-2xx as FunctionsHttpError
+        // Try to extract the real error from the response context
+        const ctx = (fnError as any).context
+        let detail = fnError.message
+        if (ctx instanceof Response) {
+          try { const b = await ctx.json(); detail = b.error || detail } catch {}
+        }
+        return { error: detail || 'Failed to delete account' }
+      }
+
+      await supabase.auth.signOut()
+      return { error: null }
+    } catch {
+      return { error: 'Something went wrong. Please try again.' }
+    }
+  }
+
   const signOut = async () => {
     await supabase.auth.signOut()
   }
 
   return (
-    <AuthContext.Provider value={{ session, user: session?.user ?? null, loading, signUp, signIn, signInWithGoogle, signOut }}>
+    <AuthContext.Provider value={{ session, user: session?.user ?? null, loading, signUp, signIn, signInWithGoogle, signInWithApple, deleteAccount, signOut }}>
       {children}
     </AuthContext.Provider>
   )

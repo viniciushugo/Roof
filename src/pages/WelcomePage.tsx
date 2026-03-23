@@ -21,13 +21,14 @@ function GoogleIcon() {
 
 export default function WelcomePage() {
   const navigate = useNavigate()
-  const { signIn, signInWithGoogle } = useAuth()
+  const { signIn, signInWithGoogle, signInWithApple } = useAuth()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
+  const [appleLoading, setAppleLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -50,6 +51,15 @@ export default function WelcomePage() {
     setError(null)
     const { error } = await signInWithGoogle()
     setGoogleLoading(false)
+    if (error) setError(error)
+  }
+
+  const handleApple = async () => {
+    trackEvent('login_started', { method: 'apple' })
+    setAppleLoading(true)
+    setError(null)
+    const { error } = await signInWithApple()
+    setAppleLoading(false)
     if (error) setError(error)
   }
 
@@ -86,11 +96,23 @@ export default function WelcomePage() {
         transition={{ delay: 0.2, duration: 0.4 }}
         className="flex-1 px-5 flex flex-col"
       >
+        {/* Apple button — required per App Store Guideline 4.8 */}
+        <button
+          onClick={handleApple}
+          disabled={appleLoading}
+          className="w-full h-12 rounded-2xl bg-foreground text-background flex items-center justify-center gap-3 text-[15px] font-semibold active:opacity-80 transition-opacity disabled:opacity-60"
+        >
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor">
+            <path d="M14.94 13.38c-.35.81-.52 1.17-.97 1.89-.63.99-1.52 2.23-2.62 2.24-1.23.01-1.55-.8-3.22-.79-1.67.01-2.02.81-3.25.8-1.1-.01-1.94-1.12-2.57-2.12C.87 12.94.41 10.16 1.63 8.26c.87-1.35 2.24-2.14 3.5-2.14 1.3 0 2.12.81 3.2.81 1.04 0 1.68-.81 3.18-.81 1.12 0 2.33.61 3.19 1.66-2.8 1.54-2.35 5.54.24 6.6zM11.35 4.21c.5-.64.88-1.55.74-2.47-.82.06-1.78.58-2.33 1.25-.5.61-.92 1.53-.76 2.42.9.03 1.83-.5 2.35-1.2z"/>
+          </svg>
+          {appleLoading ? 'Redirecting…' : 'Sign in with Apple'}
+        </button>
+
         {/* Google button */}
         <button
           onClick={handleGoogle}
           disabled={googleLoading}
-          className="w-full h-12 rounded-2xl border border-border bg-background flex items-center justify-center gap-3 text-[15px] font-medium text-foreground active:bg-secondary transition-colors disabled:opacity-60"
+          className="w-full h-12 rounded-2xl border border-border bg-background flex items-center justify-center gap-3 text-[15px] font-medium text-foreground active:bg-secondary transition-colors disabled:opacity-60 mt-3"
         >
           <GoogleIcon />
           {googleLoading ? 'Redirecting…' : 'Continue with Google'}

@@ -64,7 +64,6 @@ export default function CommunityPage() {
     if (user) {
       supabase.from('profiles').update({
         name: data.name ?? null,
-        gender: data.gender ?? null,
         cities: data.cities ?? [],
         housing_type: data.housingType ?? 'any',
         budget_min: data.budgetMin ?? 0,

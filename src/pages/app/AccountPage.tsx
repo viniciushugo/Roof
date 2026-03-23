@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { User, CreditCard, LogOut, ChevronRight, X, Heart, Bell, Mail, Zap, Clock, Lightbulb, Send } from 'lucide-react'
+import { User, CreditCard, LogOut, ChevronRight, X, Heart, Bell, Mail, Zap, Clock, Lightbulb, Send, Trash2 } from 'lucide-react'
 import BottomNav from '../../components/layout/BottomNav'
 import RoofLogo from '../../assets/RoofLogo'
 import Toggle from '../../components/ui/Toggle'
@@ -19,10 +19,13 @@ export default function AccountPage() {
   const navigate = useNavigate()
   const { data } = useOnboarding()
   const { prefs, setPref } = useNotifications()
-  const { signOut, user } = useAuth()
+  const { signOut, deleteAccount, user } = useAuth()
   const name = data.name || 'You'
   const [showPremiumModal, setShowPremiumModal] = useState(false)
   const [showFeatureModal, setShowFeatureModal] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [featureMessage, setFeatureMessage] = useState('')
   const [featureSending, setFeatureSending] = useState(false)
   const [featureSent, setFeatureSent] = useState(false)
@@ -54,6 +57,18 @@ export default function AccountPage() {
   const handleSignOut = async () => {
     await signOut()
     navigate('/welcome')
+  }
+
+  const handleDeleteAccount = async () => {
+    setDeleting(true)
+    setDeleteError(null)
+    const { error } = await deleteAccount()
+    if (error) {
+      setDeleteError(error)
+      setDeleting(false)
+    } else {
+      navigate('/welcome', { replace: true })
+    }
   }
 
   return (
@@ -143,7 +158,7 @@ export default function AccountPage() {
           </div>
 
           {/* Sign out */}
-          <div className="px-5 py-4">
+          <div className="px-5 py-4 space-y-1">
             <button
               onClick={handleSignOut}
               className="flex items-center gap-3 w-full py-3 text-left active:opacity-60"
@@ -153,9 +168,18 @@ export default function AccountPage() {
               </div>
               <span className="text-[15px] text-red-500">Sign out</span>
             </button>
+            <button
+              onClick={() => setShowDeleteModal(true)}
+              className="flex items-center gap-3 w-full py-3 text-left active:opacity-60"
+            >
+              <div className="w-9 h-9 bg-red-50 dark:bg-red-950 rounded-xl flex items-center justify-center">
+                <Trash2 size={16} strokeWidth={1.8} className="text-red-500" />
+              </div>
+              <span className="text-[15px] text-red-500">Delete account</span>
+            </button>
           </div>
 
-          <p className="text-center text-xs text-muted pb-8">Roof v0.1.0 · Made by expats ❤️</p>
+          <p className="text-center text-xs text-muted pb-8">Roof v0.1.0 · Made by expats</p>
         </div>
 
         <BottomNav />
@@ -267,6 +291,58 @@ export default function AccountPage() {
                     </button>
                   </>
                 )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Delete account confirmation modal */}
+      <AnimatePresence>
+        {showDeleteModal && (
+          <>
+            <motion.div className="absolute inset-0 bg-black/40 z-40" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => !deleting && setShowDeleteModal(false)} />
+            <motion.div className="absolute bottom-0 left-0 right-0 bg-background rounded-t-[32px] z-50 pb-safe-bottom"
+              initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 30, stiffness: 300 }}>
+              <div className="flex justify-center pt-3 pb-1">
+                <div className="w-10 h-1 rounded-full bg-border" />
+              </div>
+              <div className="px-6 pt-4 pb-8">
+                <div className="flex justify-end mb-4">
+                  <button onClick={() => !deleting && setShowDeleteModal(false)} className="w-8 h-8 bg-secondary rounded-full flex items-center justify-center active:opacity-60 text-foreground">
+                    <X size={15} strokeWidth={2} className="text-muted" />
+                  </button>
+                </div>
+
+                <div className="flex justify-center mb-5">
+                  <div className="w-16 h-16 bg-red-50 dark:bg-red-950 rounded-3xl flex items-center justify-center">
+                    <Trash2 size={28} strokeWidth={1.5} className="text-red-500" />
+                  </div>
+                </div>
+                <h2 className="text-2xl font-bold text-foreground text-center mb-3">Delete your account?</h2>
+                <p className="text-[15px] text-muted leading-relaxed text-center mb-6">
+                  This will permanently delete your account, saved listings, search alerts, and all associated data. This action cannot be undone.
+                </p>
+
+                {deleteError && (
+                  <p className="text-sm text-red-500 font-medium text-center mb-4">{deleteError}</p>
+                )}
+
+                <button
+                  onClick={handleDeleteAccount}
+                  disabled={deleting}
+                  className="w-full h-14 bg-red-500 text-white rounded-2xl text-[15px] font-semibold active:opacity-80 disabled:opacity-40 mb-3"
+                >
+                  {deleting ? 'Deleting…' : 'Delete my account'}
+                </button>
+                <button
+                  onClick={() => setShowDeleteModal(false)}
+                  disabled={deleting}
+                  className="w-full h-14 bg-secondary text-foreground rounded-2xl text-[15px] font-semibold active:opacity-80"
+                >
+                  Cancel
+                </button>
               </div>
             </motion.div>
           </>
