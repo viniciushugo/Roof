@@ -69,6 +69,10 @@ function rowToListing(row: Record<string, unknown>): Listing {
     postedAt: relativeTime(createdAt),
     postedAtRaw: createdAt,
     description: (row.description as string) ?? '',
+    lat: (row.lat as number) ?? null,
+    lng: (row.lng as number) ?? null,
+    addressRaw: (row.address_raw as string) ?? null,
+    addressPrecision: (row.address_precision as Listing['addressPrecision']) ?? null,
   }
 }
 

@@ -17,6 +17,10 @@ export interface Listing {
   postedAt: string
   postedAtRaw: string
   description: string
+  lat: number | null
+  lng: number | null
+  addressRaw: string | null
+  addressPrecision: 'exact' | 'postcode' | 'neighbourhood' | 'city' | null
 }
 
 export const sourceColors: Record<Listing['source'], string> = {

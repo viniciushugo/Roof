@@ -1,7 +1,7 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo, lazy, Suspense } from 'react'
 import { usePersistedState } from '../../hooks/usePersistedState'
 // framer-motion scroll only
-import { MapPin, Layers, Filter } from 'lucide-react'
+import { MapPin, Layers, Filter, Map, List } from 'lucide-react'
 import { useScroll } from 'framer-motion'
 import { Listing } from '../../data/listings'
 import { useListings } from '../../context/ListingsContext'
@@ -27,10 +27,14 @@ import CatchUpView from '../../components/ui/CatchUpView'
 import { track } from '../../lib/analytics'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 
+// Code-split the map — Leaflet is ~197KB
+const MapView = lazy(() => import('../../components/ui/MapView'))
+
 const PLATFORM_FILTERS = ['All', 'Pararius', 'Kamernet', 'Huurwoningen', 'HousingAnywhere', 'DirectWonen', 'Rentola', 'Kamer.nl', 'Huurstunt', '123Wonen', 'Funda'] as const
 type PlatformFilter = typeof PLATFORM_FILTERS[number]
 
 export default function RoomsPage() {
+  const [viewMode, setViewMode] = usePersistedState<'list' | 'map'>('roof-view-mode', 'list')
   const [platformFilter, setPlatformFilter] = usePersistedState<PlatformFilter>('roof-platform-filter', 'All')
   const [showFilters, setShowFilters] = useState(false)
   const [showCityPicker, setShowCityPicker] = useState(false)
@@ -260,72 +264,110 @@ export default function RoomsPage() {
         )}
       </div>
 
-      {/* Listings feed with pull-to-refresh */}
-      <PullToRefresh onRefresh={handleRefresh} scrollRef={feedRef}>
-        <div className="min-h-full pb-4 flex flex-col">
-          {loading ? (
-            <div className="px-5 space-y-4 pt-2">
-              {[0, 1, 2].map((i) => (
-                <ListingCardSkeleton key={i} />
-              ))}
+      {/* View: Map or List */}
+      {viewMode === 'map' ? (
+        <Suspense fallback={
+          <div className="flex-1 flex items-center justify-center bg-secondary">
+            <span className="text-sm text-muted">Loading map…</span>
+          </div>
+        }>
+          <MapView
+            listings={filtered}
+            onSelectListing={(l) => setActiveListing(l)}
+            isSaved={isSaved}
+            onToggleSave={toggleSave}
+          />
+        </Suspense>
+      ) : (
+        <>
+          {/* Listings feed with pull-to-refresh */}
+          <PullToRefresh onRefresh={handleRefresh} scrollRef={feedRef}>
+            <div className="min-h-full pb-4 flex flex-col">
+              {loading ? (
+                <div className="px-5 space-y-4 pt-2">
+                  {[0, 1, 2].map((i) => (
+                    <ListingCardSkeleton key={i} />
+                  ))}
+                </div>
+              ) : platformFilter === 'Funda' ? (
+                <div className="flex flex-col flex-1 items-center justify-center gap-3 px-8 text-center">
+                  <div className="w-14 h-14 bg-orange-50 dark:bg-orange-950 rounded-3xl flex items-center justify-center text-2xl">
+                    🏗
+                  </div>
+                  <div>
+                    <p className="text-[15px] font-semibold text-foreground mb-1">Coming soon!</p>
+                    <p className="text-sm text-muted leading-relaxed">
+                      Funda charges for external search on their platform. We're working on making this happen — stay tuned!
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setPlatformFilter('All')}
+                    className="mt-1 px-5 h-10 bg-foreground text-background rounded-full text-sm font-medium"
+                  >
+                    Browse all listings
+                  </button>
+                </div>
+              ) : filtered.length === 0 ? (
+                <div className="flex flex-col flex-1 items-center justify-center gap-3 px-8 text-center">
+                  <div className="w-14 h-14 bg-secondary rounded-3xl flex items-center justify-center">
+                    <Filter size={22} strokeWidth={1.5} className="text-muted" />
+                  </div>
+                  <div>
+                    <p className="text-[15px] font-semibold text-foreground mb-1">No listings match</p>
+                    <p className="text-sm text-muted">Try adjusting or resetting your filters.</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setFilters(DEFAULT_FILTERS)
+                      setSelectedCities([])
+                      setPlatformFilter('All')
+                    }}
+                    className="mt-1 px-5 h-10 bg-foreground text-background rounded-full text-sm font-medium"
+                  >
+                    Reset filters
+                  </button>
+                </div>
+              ) : (
+                <div className="px-5 space-y-4 pt-2">
+                  {visibleListings.map((listing, i) => (
+                      <ListingCard
+                        key={listing.id}
+                        listing={listing}
+                        index={i}
+                        onClick={() => setActiveListing(listing)}
+                        isSaved={isSaved(listing.id)}
+                        onToggleSave={() => toggleSave(listing.id)}
+                        scrollY={scrollY}
+                        isViewed={isViewed(listing.id)}
+                      />
+                    ))}
+                  {hasMore && <div ref={sentinelRef} className="h-px" />}
+                </div>
+              )}
             </div>
-          ) : platformFilter === 'Funda' ? (
-            <div className="flex flex-col flex-1 items-center justify-center gap-3 px-8 text-center">
-              <div className="w-14 h-14 bg-orange-50 dark:bg-orange-950 rounded-3xl flex items-center justify-center text-2xl">
-                🏗
-              </div>
-              <div>
-                <p className="text-[15px] font-semibold text-foreground mb-1">Coming soon!</p>
-                <p className="text-sm text-muted leading-relaxed">
-                  Funda charges for external search on their platform. We're working on making this happen — stay tuned!
-                </p>
-              </div>
-              <button
-                onClick={() => setPlatformFilter('All')}
-                className="mt-1 px-5 h-10 bg-foreground text-background rounded-full text-sm font-medium"
-              >
-                Browse all listings
-              </button>
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="flex flex-col flex-1 items-center justify-center gap-3 px-8 text-center">
-              <div className="w-14 h-14 bg-secondary rounded-3xl flex items-center justify-center">
-                <Filter size={22} strokeWidth={1.5} className="text-muted" />
-              </div>
-              <div>
-                <p className="text-[15px] font-semibold text-foreground mb-1">No listings match</p>
-                <p className="text-sm text-muted">Try adjusting or resetting your filters.</p>
-              </div>
-              <button
-                onClick={() => {
-                  setFilters(DEFAULT_FILTERS)
-                  setSelectedCities([])
-                  setPlatformFilter('All')
-                }}
-                className="mt-1 px-5 h-10 bg-foreground text-background rounded-full text-sm font-medium"
-              >
-                Reset filters
-              </button>
-            </div>
-          ) : (
-            <div className="px-5 space-y-4 pt-2">
-              {visibleListings.map((listing, i) => (
-                  <ListingCard
-                    key={listing.id}
-                    listing={listing}
-                    index={i}
-                    onClick={() => setActiveListing(listing)}
-                    isSaved={isSaved(listing.id)}
-                    onToggleSave={() => toggleSave(listing.id)}
-                    scrollY={scrollY}
-                    isViewed={isViewed(listing.id)}
-                  />
-                ))}
-              {hasMore && <div ref={sentinelRef} className="h-px" />}
-            </div>
-          )}
+          </PullToRefresh>
+        </>
+      )}
+
+      {/* Floating Map/List toggle — Airbnb-style */}
+      {!activeListing && (
+        <div className="absolute bottom-[calc(env(safe-area-inset-bottom)+68px)] left-1/2 -translate-x-1/2 z-[1001]">
+          <button
+            onClick={() => {
+              const next = viewMode === 'list' ? 'map' : 'list'
+              setViewMode(next)
+              track('view_mode_toggled', { mode: next })
+            }}
+            className="flex items-center gap-1.5 px-4 h-10 bg-foreground text-background rounded-full shadow-lg shadow-black/25 text-sm font-semibold active:scale-95 transition-transform"
+          >
+            {viewMode === 'list' ? (
+              <><Map size={14} strokeWidth={2} />Map</>
+            ) : (
+              <><List size={14} strokeWidth={2} />List</>
+            )}
+          </button>
         </div>
-      </PullToRefresh>
+      )}
 
       <BottomNav />
 

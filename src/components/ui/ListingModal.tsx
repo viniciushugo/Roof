@@ -91,7 +91,7 @@ export default function ListingModal({ listing, onClose, onViewed }: Props) {
         <>
           {/* Backdrop */}
           <motion.div
-            className="absolute inset-0 bg-black/50 z-40"
+            className="absolute inset-0 bg-black/50 z-[2000]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -100,7 +100,7 @@ export default function ListingModal({ listing, onClose, onViewed }: Props) {
 
           {/* Sheet */}
           <motion.div
-            className="absolute bottom-0 left-0 right-0 bg-background rounded-t-[28px] overflow-hidden z-50 flex flex-col"
+            className="absolute bottom-0 left-0 right-0 bg-background rounded-t-[28px] overflow-hidden z-[2001] flex flex-col"
             style={{ height: '92%' }}
             initial={{ y: '100%' }}
             animate={{ y: 0 }}

@@ -16,6 +16,7 @@ require('dotenv').config()
 const { createClient } = require('@supabase/supabase-js')
 const crypto = require('crypto')
 const uploadImage = require('./lib/upload-image')
+const { geocodeAddress, determinePrecision, buildAddressRaw } = require('./lib/geocode')
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://wzsdnhzsosonlcgubmxe.supabase.co'
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || ''
@@ -105,6 +106,12 @@ async function fetchFundaListings(city, budgetMax, page = 1) {
         const size = item.floorArea || item.livingArea || null
         const neighborhood = item.location?.neighbourhood || item.location?.city || city
 
+        // Extract structured address fields from Funda JSON-LD / Next data
+        const street = item.address?.streetName || item.streetName || null
+        const streetNumber = item.address?.houseNumber || item.houseNumber || null
+        const postcode = item.address?.postcode || item.postcode || item.location?.postalCode || null
+        const fundaCity = item.address?.city || item.location?.city || city
+
         if (title && price > 0) {
           results.push({
             title,
@@ -113,8 +120,11 @@ async function fetchFundaListings(city, budgetMax, page = 1) {
             url: listingUrl,
             imageUrl,
             size,
-            city,
+            city: fundaCity,
             neighborhood,
+            street,
+            streetNumber: streetNumber ? String(streetNumber) : null,
+            postcode,
           })
         }
       }
@@ -166,12 +176,19 @@ async function upsertListings(listings) {
     return
   }
 
-  console.log('\n📸 Uploading images...')
-  const rows = await Promise.all(unique.map(async (l) => {
+  console.log('\n📸 Uploading images & geocoding...')
+  const rows = []
+  for (const l of unique) {
     const extId = stableId(l.url)
     const hostedImageUrl = await uploadImage(supabase, extId, l.imageUrl, 'https://www.funda.nl/')
     if (hostedImageUrl) process.stdout.write('.')
-    return {
+
+    // Geocode the address
+    const precision = determinePrecision({ street: l.street, number: l.streetNumber, postcode: l.postcode, neighbourhood: l.neighborhood })
+    const addressRaw = buildAddressRaw({ street: l.street, number: l.streetNumber, postcode: l.postcode, city: l.city, neighbourhood: l.neighborhood })
+    const coords = await geocodeAddress(addressRaw, precision)
+
+    const row = {
       external_id: extId,
       title: l.title,
       neighborhood: l.neighborhood,
@@ -184,8 +201,18 @@ async function upsertListings(listings) {
       image_url: hostedImageUrl || l.imageUrl,
       is_active: true,
       last_seen_at: now,
+      address_raw: addressRaw || null,
+      address_precision: precision,
     }
-  }))
+    if (coords) {
+      row.lat = coords.lat
+      row.lng = coords.lng
+      row.geocoded_at = now
+      row.geocode_attempts = 1
+    }
+    rows.push(row)
+  }
+  console.log()
 
   const { data, error } = await supabase.from('listings').upsert(rows, { onConflict: 'external_id' }).select('id')
   if (error) console.error('\n❌ Supabase error:', error.message)

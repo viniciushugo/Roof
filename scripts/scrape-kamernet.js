@@ -13,6 +13,7 @@ const { chromium } = require('playwright')
 const { createClient } = require('@supabase/supabase-js')
 const crypto = require('crypto')
 const uploadImage = require('./lib/upload-image')
+const { geocodeAddress, determinePrecision, buildAddressRaw } = require('./lib/geocode')
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://wzsdnhzsosonlcgubmxe.supabase.co'
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || ''
@@ -143,8 +144,15 @@ async function upsertListings(listings) {
   const seen = new Set()
   const unique = listings.filter((l) => { const id = stableId(l.url); if (seen.has(id)) return false; seen.add(id); return true })
 
-  const rows = unique.map((l) => {
+  console.log('\n  Geocoding listings...')
+  const rows = []
+  for (const l of unique) {
     const extId = stableId(l.url)
+    // Kamernet: neighborhood is the street name, city is city
+    const precision = determinePrecision({ street: l.neighborhood, number: null, postcode: null, neighbourhood: l.neighborhood })
+    const addressRaw = buildAddressRaw({ street: l.neighborhood, number: null, postcode: null, city: l.city, neighbourhood: l.neighborhood })
+    const coords = await geocodeAddress(addressRaw, precision)
+
     const row = {
       external_id: extId,
       title: l.title,
@@ -158,10 +166,20 @@ async function upsertListings(listings) {
       url: l.url,
       is_active: true,
       last_seen_at: now,
+      address_raw: addressRaw || null,
+      address_precision: precision,
+    }
+    if (coords) {
+      row.lat = coords.lat
+      row.lng = coords.lng
+      row.geocoded_at = now
+      row.geocode_attempts = 1
+      process.stdout.write('.')
     }
     if (l.imageUrl) row.image_url = l.imageUrl
-    return row
-  })
+    rows.push(row)
+  }
+  console.log()
 
   const { data, error } = await supabase.from('listings').upsert(rows, { onConflict: 'external_id' }).select('id')
   if (error) console.error('\n❌ Supabase error:', error.message)

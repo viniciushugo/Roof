@@ -17,6 +17,7 @@ const { chromium } = require('playwright')
 const { createClient } = require('@supabase/supabase-js')
 const crypto = require('crypto')
 const uploadImage = require('./lib/upload-image')
+const { geocodeAddress, determinePrecision, buildAddressRaw } = require('./lib/geocode')
 
 // ---------------------------------------------------------------------------
 // Supabase client (service role — bypasses RLS to allow scraper writes)
@@ -160,11 +161,20 @@ async function scrapePage(page, url) {
 
         const neighborhood = location.split('•').map(s => s.trim())[0] || null
 
+        // Parse address from location text
+        const locationText = location || ''
+        const postcodeMatch = locationText.match(/(\d{4})\s?([A-Z]{2})/)
+        const postcode = postcodeMatch ? `${postcodeMatch[1]} ${postcodeMatch[2]}` : null
+        const streetMatch = locationText.match(/^([^,]+)/)
+        const street = streetMatch ? streetMatch[1].trim() : null
+        const numberMatch = street ? street.match(/\d+/) : null
+        const streetNumber = numberMatch ? numberMatch[0] : null
+
         let listingType = null
         if (url.includes('/apartments/') || url.includes('/studio/')) listingType = 'Apartment'
         if (url.includes('/rooms/')) listingType = 'Private room'
 
-        return title && url ? { title, price, priceText, location, neighborhood, size, rooms, url, imageUrl, imageUrls, listingType } : null
+        return title && url ? { title, price, priceText, location, neighborhood, size, rooms, url, imageUrl, imageUrls, listingType, postcode, street, streetNumber } : null
       } catch { return null }
     }).filter(Boolean)
   })
@@ -270,8 +280,14 @@ async function upsertListings(listings) {
 
   // Store external image URL first; batch-upload via fix-images.js afterward
   // Only include image_url when we have one — never overwrite existing hosted images with null
-  const rows = unique.map((l) => {
+  console.log('\n  Geocoding listings...')
+  const rows = []
+  for (const l of unique) {
     const extId = stableId('Pararius', l.url)
+    const precision = determinePrecision({ street: l.street, number: l.streetNumber, postcode: l.postcode, neighbourhood: l.neighborhood })
+    const addressRaw = buildAddressRaw({ street: l.street, number: l.streetNumber, postcode: l.postcode, city: l.city, neighbourhood: l.neighborhood })
+    const coords = await geocodeAddress(addressRaw, precision)
+
     const row = {
       external_id: extId,
       title: l.title,
@@ -288,11 +304,21 @@ async function upsertListings(listings) {
       description: null,
       is_active: true,
       last_seen_at: now,
+      address_raw: addressRaw || null,
+      address_precision: precision,
+    }
+    if (coords) {
+      row.lat = coords.lat
+      row.lng = coords.lng
+      row.geocoded_at = now
+      row.geocode_attempts = 1
+      process.stdout.write('.')
     }
     if (l.imageUrl) row.image_url = l.imageUrl
     if (l.imageUrls && l.imageUrls.length > 0) row.images = JSON.stringify(l.imageUrls)
-    return row
-  })
+    rows.push(row)
+  }
+  console.log()
 
   const { data, error } = await supabase
     .from('listings')

@@ -30,7 +30,15 @@ CREATE TABLE IF NOT EXISTS listings (
   is_active     BOOLEAN     DEFAULT true,       -- set false when listing disappears
   first_seen_at TIMESTAMPTZ DEFAULT NOW(),
   last_seen_at  TIMESTAMPTZ DEFAULT NOW(),
-  created_at    TIMESTAMPTZ DEFAULT NOW()
+  created_at    TIMESTAMPTZ DEFAULT NOW(),
+
+  -- Geocoding (map view)
+  lat               float8,
+  lng               float8,
+  address_raw       TEXT,
+  address_precision TEXT CHECK (address_precision IN ('exact','postcode','neighbourhood','city')),
+  geocoded_at       TIMESTAMPTZ,
+  geocode_attempts  INTEGER DEFAULT 0
 );
 
 -- Index for feed queries
@@ -40,6 +48,10 @@ CREATE INDEX IF NOT EXISTS listings_type_idx       ON listings (type);
 CREATE INDEX IF NOT EXISTS listings_is_new_idx     ON listings (is_new);
 CREATE INDEX IF NOT EXISTS listings_is_active_idx  ON listings (is_active);
 CREATE INDEX IF NOT EXISTS listings_source_idx     ON listings (source);
+
+-- Spatial indexes for map viewport queries
+CREATE INDEX IF NOT EXISTS listings_latlong_idx        ON listings (lat, lng);
+CREATE INDEX IF NOT EXISTS listings_active_latlong_idx ON listings (is_active, lat, lng);
 
 
 -- ============================================================
