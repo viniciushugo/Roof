@@ -38,6 +38,8 @@ jobs:
       MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
       MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
       MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
+      # Required for Node 24 support in existing actions
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       # ── 0. Validate required secrets ──
@@ -89,23 +91,22 @@ jobs:
         if: env.SECRETS_MISSING == 'false'
         run: npx cap sync ios
 
-      # ── 6. Setup Ruby ──
+      # ── 6. Setup Ruby & Fastlane ──
       - name: Setup Ruby
         if: env.SECRETS_MISSING == 'false'
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.3"
-
-      # ── 7. Install Fastlane ──
-      - name: Install Fastlane
-        if: env.SECRETS_MISSING == 'false'
-        working-directory: ios/App
-        run: bundle install
+          bundler-cache: true
+          working-directory: ios/App
 
       # ── 8. Run Fastlane ──
       - name: Run Fastlane
         if: env.SECRETS_MISSING == 'false'
         working-directory: ios/App
+        env:
+          GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
+          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
         run: bundle exec fastlane ${{ github.event.inputs.lane || 'beta' }}
 
       # ── 8. Upload IPA as artifact ──
