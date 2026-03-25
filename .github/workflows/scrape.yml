@@ -2,7 +2,7 @@ name: Scheduled Scrape
 
 on:
   schedule:
-    - cron: "0 * * * *" # Every hour (reduced frequency to be safe with parallel jobs)
+    - cron: "0 * * * *"
   workflow_dispatch:
     inputs:
       scraper:
@@ -38,20 +38,32 @@ on:
         default: '1000'
 
 jobs:
+  # Job to determine which scrapers to run
+  setup-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      scrapers: ${{ steps.set-matrix.outputs.scrapers }}
+    steps:
+      - id: set-matrix
+        run: |
+          ALL='["pararius", "kamernet", "huurwoningen", "housinganywhere", "directwonen", "rentola", "kamernl", "huurstunt", "123wonen"]'
+          INPUT="${{ github.event.inputs.scraper }}"
+          
+          if [[ "$INPUT" == "all" || "${{ github.event_name }}" == "schedule" || "$INPUT" == "" ]]; then
+            echo "scrapers=$ALL" >> $GITHUB_OUTPUT
+          else
+            echo "scrapers=[\"$INPUT\"]" >> $GITHUB_OUTPUT
+          fi
+
   scrape:
+    needs: setup-matrix
     name: Scrape (${{ matrix.scraper }})
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        scraper: [pararius, kamernet, huurwoningen, housinganywhere, directwonen, rentola, kamernl, huurstunt, 123wonen]
-
-    # Run if on schedule (runs all) OR if manual trigger matches this scraper OR manual trigger is 'all'
-    if: |
-      github.event_name == 'schedule' || 
-      github.event.inputs.scraper == 'all' || 
-      github.event.inputs.scraper == matrix.scraper
+        scraper: ${{ fromJSON(needs.setup-matrix.outputs.scrapers) }}
 
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -72,7 +84,7 @@ jobs:
       - name: Install Playwright browsers
         run: npx --prefix scripts playwright install chromium --with-deps
 
-      - name: Run Matrix Scraper
+      - name: Run Scraper
         run: |
           CITY_INPUT="${{ github.event.inputs.city }}"
           if [[ "$CITY_INPUT" == "" || "$CITY_INPUT" == "all" ]]; then
@@ -94,7 +106,7 @@ jobs:
     name: Post-Scrape Cleanup
     needs: scrape
     runs-on: ubuntu-latest
-    if: always() # Run even if some scrapers failed
+    if: always()
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
